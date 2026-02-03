@@ -1,0 +1,5 @@
+p, admin, kv, get
+p, admin, kv, put
+p, reader, kv, get
+g, alice, admin
+g, bob, reader
