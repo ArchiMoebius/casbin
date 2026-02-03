@@ -1,5 +1,7 @@
 p, admin, kv, get
+p, admin, kv, watch
 p, admin, kv, put
 p, reader, kv, get
+p, reader, kv, watch
 g, alice, admin
 g, bob, reader

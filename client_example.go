@@ -7,9 +7,10 @@ import (
 	"sync"
 	"time"
 
-	pb "kvservice/gen/go/proto/kv/v1"
+	pb "kvservice/pkg/gen/v1/kv"
 
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/metadata"
 )
 
@@ -28,13 +29,14 @@ func runClientOperations(client pb.KVServiceClient, username, password string, w
 	key := "foo"
 	val := "bar"
 
+	// WATCH in a goroutine — streams updates for 5 seconds
 	go func() {
-		// WATCH operation (stream updates for 5 seconds)
 		streamCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 		defer cancel()
-		stream, err := client.Watch(streamCtx, &pb.WatchRequest{Key: &key})
+
+		stream, err := client.Watch(streamCtx, &pb.WatchRequest{Key: key})
 		if err != nil {
-			log.Printf("[%s] WATCH failed: %v", username, err)
+			log.Printf("[%s] WATCH failed to open: %v", username, err)
 			return
 		}
 
@@ -42,32 +44,39 @@ func runClientOperations(client pb.KVServiceClient, username, password string, w
 			update, err := stream.Recv()
 			if err != nil {
 				log.Printf("[%s] Watch ended: %v", username, err)
-				break
+				return
 			}
 			log.Printf("[%s] WATCH update: key=%s value=%s user=%s ts=%d",
-				username, *update.Key, *update.Value, *update.UserId, *update.Timestamp)
+				username, update.Key, update.Value, update.UserId, update.Timestamp)
 		}
 	}()
 
+	// Brief pause so the Watch stream is open before we Put.
+	// Without this the Put can fire before the server registers the watcher.
+	time.Sleep(100 * time.Millisecond)
+
 	// PUT operation
-	_, err := client.Put(ctx, &pb.PutRequest{Key: &key, Value: &val})
+	putResp, err := client.Put(ctx, &pb.PutRequest{Key: key, Value: val})
 	if err != nil {
 		log.Printf("[%s] PUT failed: %v", username, err)
 	} else {
-		log.Printf("[%s] PUT succeeded", username)
+		log.Printf("[%s] PUT succeeded: %v", username, putResp.Success)
 	}
 
 	// GET operation
-	getResp, err := client.Get(ctx, &pb.GetRequest{Key: &key})
+	getResp, err := client.Get(ctx, &pb.GetRequest{Key: key})
 	if err != nil {
 		log.Printf("[%s] GET failed: %v", username, err)
 	} else {
-		log.Printf("[%s] GET returned: %s", username, *getResp.Value)
+		log.Printf("[%s] GET returned: %s", username, getResp.Value)
 	}
 }
 
 func main() {
-	conn, err := grpc.Dial("localhost:50051", grpc.WithInsecure())
+	conn, err := grpc.NewClient(
+		"localhost:50051",
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+	)
 	if err != nil {
 		log.Fatalf("Failed to connect: %v", err)
 	}
@@ -82,7 +91,7 @@ func main() {
 	}{
 		{"alice", "password123"},
 		{"bob", "password456"},
-		{"foo", "wrongpass"}, // invalid user
+		{"foo", "wrongpass"}, // invalid user — should fail at auth
 	}
 
 	for _, u := range users {

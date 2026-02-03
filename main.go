@@ -2,31 +2,34 @@ package main
 
 import (
 	"context"
-	"encoding/base64"
 	"log"
 	"net"
 	"os"
 	"os/signal"
-	"strings"
 	"sync"
 	"syscall"
 	"time"
 
-	pb "kvservice/gen/go/proto/kv/v1"
+	"kvservice/auth"
+	pb "kvservice/pkg/gen/v1/kv"
 
-	"github.com/casbin/casbin/v2"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 )
 
+// ----------------- Context key (unexported type avoids collisions) -----------------
+type contextKey string
+
+const userIDKey contextKey = "userID"
+
 // ----------------- KV Server -----------------
 type KVServer struct {
 	pb.UnimplementedKVServiceServer
 	store    map[string]string
 	mu       sync.RWMutex
-	watchers map[string][]chan *pb.WatchResponse // key -> list of watcher channels
+	watchers map[string][]chan *pb.WatchResponse
 	wmu      sync.Mutex
 }
 
@@ -40,193 +43,206 @@ func NewKVServer() *KVServer {
 func (s *KVServer) Get(ctx context.Context, req *pb.GetRequest) (*pb.GetResponse, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	if req.Key == nil {
+
+	if req.Key == "" {
 		return nil, status.Error(codes.InvalidArgument, "key missing")
 	}
-	val, ok := s.store[*req.Key]
+
+	val, ok := s.store[req.Key]
 	if !ok {
-		return nil, status.Errorf(codes.NotFound, "key %s not found", *req.Key)
+		return nil, status.Errorf(codes.NotFound, "key %s not found", req.Key)
 	}
-	return &pb.GetResponse{Value: &val}, nil
+
+	return &pb.GetResponse{Value: val}, nil
 }
 
 func (s *KVServer) Put(ctx context.Context, req *pb.PutRequest) (*pb.PutResponse, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if req.Key == nil || req.Value == nil {
+	if req.Key == "" || req.Value == "" {
 		return nil, status.Error(codes.InvalidArgument, "key or value missing")
 	}
-	s.store[*req.Key] = *req.Value
 
-	// Notify watchers
-	s.wmu.Lock()
-	userid := ctx.Value("userID").(string)
+	// Store write — scoped lock, released before notification.
+	s.mu.Lock()
+	s.store[req.Key] = req.Value
+	s.mu.Unlock()
+
+	// Notify watchers — separate lock, never held at the same time as mu.
+	userID, _ := ctx.Value(userIDKey).(string)
 	now := time.Now().Unix()
-	if chans, ok := s.watchers[*req.Key]; ok {
+	s.wmu.Lock()
+	if chans, ok := s.watchers[req.Key]; ok {
 		for _, ch := range chans {
 			select {
 			case ch <- &pb.WatchResponse{
 				Key:       req.Key,
 				Value:     req.Value,
-				UserId:    &userid,
-				Timestamp: &now,
+				UserId:    userID,
+				Timestamp: now,
 			}:
 			default: // skip if channel is full
 			}
 		}
 	}
 	s.wmu.Unlock()
-	status := true
-	return &pb.PutResponse{Success: &status}, nil
+
+	return &pb.PutResponse{Success: true}, nil
 }
 
 // ----------------- Watch Streaming -----------------
 func (s *KVServer) Watch(req *pb.WatchRequest, stream pb.KVService_WatchServer) error {
-	if req.Key == nil {
+	if req.Key == "" {
 		return status.Error(codes.InvalidArgument, "key missing")
 	}
 
-	// Create watcher channel
 	ch := make(chan *pb.WatchResponse, 10)
 
 	s.wmu.Lock()
-	s.watchers[*req.Key] = append(s.watchers[*req.Key], ch)
+	s.watchers[req.Key] = append(s.watchers[req.Key], ch)
 	s.wmu.Unlock()
 
 	defer func() {
-		// remove channel from watchers
 		s.wmu.Lock()
-		chans := s.watchers[*req.Key]
+		chans := s.watchers[req.Key]
 		for i, c := range chans {
 			if c == ch {
-				s.watchers[*req.Key] = append(chans[:i], chans[i+1:]...)
+				s.watchers[req.Key] = append(chans[:i], chans[i+1:]...)
 				break
 			}
 		}
 		s.wmu.Unlock()
 	}()
 
-	// Stream updates
-	for update := range ch {
-		if err := stream.Send(update); err != nil {
-			return err
+	for {
+		select {
+		case update, ok := <-ch:
+			if !ok {
+				return nil
+			}
+			if err := stream.Send(update); err != nil {
+				return err
+			}
+		case <-stream.Context().Done():
+			return stream.Context().Err()
 		}
 	}
-	return nil
-}
-
-// ----------------- Auth Manager -----------------
-type AuthManager struct {
-	mu       sync.RWMutex
-	enforcer *casbin.Enforcer
-	users    map[string]string // username -> password
-}
-
-func NewAuthManager(modelPath, policyPath string, users map[string]string) (*AuthManager, error) {
-	enforcer, err := casbin.NewEnforcer(modelPath, policyPath)
-	if err != nil {
-		return nil, err
-	}
-	return &AuthManager{enforcer: enforcer, users: users}, nil
-}
-
-func (am *AuthManager) ReloadPolicies(modelPath, policyPath string) {
-	newEnforcer, err := casbin.NewEnforcer(modelPath, policyPath)
-	if err != nil {
-		log.Printf("Failed to reload policies: %v", err)
-		return
-	}
-	if err := newEnforcer.LoadPolicy(); err != nil {
-		log.Printf("Policy validation failed: %v", err)
-		return
-	}
-	am.mu.Lock()
-	am.enforcer = newEnforcer
-	am.mu.Unlock()
-	log.Println("✅ Casbin policies reloaded successfully")
-}
-
-func (am *AuthManager) ValidateUser(authHeader string) (string, error) {
-	if authHeader == "" || !strings.HasPrefix(authHeader, "Basic ") {
-		return "", status.Error(codes.Unauthenticated, "missing authorization header")
-	}
-
-	payload, err := base64.StdEncoding.DecodeString(authHeader[len("Basic "):])
-	if err != nil {
-		return "", status.Error(codes.Unauthenticated, "invalid base64")
-	}
-
-	parts := strings.SplitN(string(payload), ":", 2)
-	if len(parts) != 2 {
-		return "", status.Error(codes.Unauthenticated, "invalid basic auth format")
-	}
-	username, password := parts[0], parts[1]
-
-	if stored, ok := am.users[username]; !ok || stored != password {
-		return "", status.Error(codes.Unauthenticated, "invalid credentials")
-	}
-
-	return username, nil
-}
-
-func (am *AuthManager) Authorize(userID, obj, action string) (bool, error) {
-	am.mu.RLock()
-	defer am.mu.RUnlock()
-	return am.enforcer.Enforce(userID, obj, action)
 }
 
 // ----------------- Interceptors -----------------
-func authInterceptor(auth *AuthManager, methodAction map[string]string) grpc.UnaryServerInterceptor {
+
+// authServerStream wraps grpc.ServerStream to inject a context with userID.
+type authServerStream struct {
+	grpc.ServerStream
+	ctx context.Context
+}
+
+func (s *authServerStream) Context() context.Context { return s.ctx }
+
+// ----------------- Auth: shared core -----------------
+
+// authenticate is the single auth implementation. Both the unary and stream
+// interceptors delegate here. It extracts the credential from the incoming
+// metadata, validates via the AuthManager, authorises against the policy,
+// and returns a new context with the userID injected.
+//
+// auth.ValidateUser returns plain errors; this is the only place that maps
+// them to gRPC status codes, keeping the auth package transport-agnostic.
+func authenticate(ctx context.Context, fullMethod string, am *auth.AuthManager, methodAction map[string]string) (context.Context, error) {
+	action, ok := methodAction[fullMethod]
+	if !ok {
+		return ctx, status.Errorf(codes.PermissionDenied, "unknown RPC method %s", fullMethod)
+	}
+
+	md, ok := metadata.FromIncomingContext(ctx)
+	if !ok {
+		return ctx, status.Error(codes.Unauthenticated, "missing metadata")
+	}
+
+	var authHeader string
+	if headers := md.Get("authorization"); len(headers) > 0 {
+		authHeader = headers[0]
+	}
+
+	userID, err := am.ValidateUser(authHeader)
+	if err != nil {
+		return ctx, status.Error(codes.Unauthenticated, err.Error())
+	}
+
+	allowed, err := am.Authorize(userID, "kv", action)
+	if err != nil {
+		return ctx, status.Error(codes.Internal, err.Error())
+	}
+	if !allowed {
+		return ctx, status.Error(codes.PermissionDenied, "forbidden")
+	}
+
+	return context.WithValue(ctx, userIDKey, userID), nil
+}
+
+// ----------------- Auth: unary + stream wrappers -----------------
+
+func unaryAuthInterceptor(am *auth.AuthManager, methodAction map[string]string) grpc.UnaryServerInterceptor {
 	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
-		action, ok := methodAction[info.FullMethod]
-		if !ok {
-			return nil, status.Errorf(codes.PermissionDenied, "unknown RPC method %s", info.FullMethod)
-		}
-
-		md, ok := metadata.FromIncomingContext(ctx)
-		if !ok {
-			return nil, status.Error(codes.Unauthenticated, "missing metadata")
-		}
-
-		authHeaders := md.Get("authorization")
-		var authHeader string
-		if len(authHeaders) > 0 {
-			authHeader = authHeaders[0]
-		}
-
-		userID, err := auth.ValidateUser(authHeader)
+		ctx, err := authenticate(ctx, info.FullMethod, am, methodAction)
 		if err != nil {
 			return nil, err
 		}
-
-		allowed, err := auth.Authorize(userID, "kv", action)
-		if err != nil {
-			return nil, status.Error(codes.Internal, err.Error())
-		}
-		if !allowed {
-			return nil, status.Error(codes.PermissionDenied, "forbidden")
-		}
-
-		ctx = context.WithValue(ctx, "userID", userID)
 		return handler(ctx, req)
 	}
 }
 
-func loggingInterceptor(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
+func streamAuthInterceptor(am *auth.AuthManager, methodAction map[string]string) grpc.StreamServerInterceptor {
+	return func(srv interface{}, ss grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
+		ctx, err := authenticate(ss.Context(), info.FullMethod, am, methodAction)
+		if err != nil {
+			return err
+		}
+		return handler(srv, &authServerStream{ServerStream: ss, ctx: ctx})
+	}
+}
+
+// ----------------- Logging: shared core -----------------
+
+// logRequest is the single logging implementation. The caller passes in the
+// method name, the context, and a thunk that runs the rest of the chain.
+// Unary and stream wrappers differ only in how they call the next handler;
+// the timing and formatting is identical.
+func logRequest(ctx context.Context, fullMethod string, fn func() error) error {
 	start := time.Now()
-	resp, err := handler(ctx, req)
+	err := fn()
+
 	statusStr := "OK"
 	if err != nil {
 		statusStr = "ERROR"
 	}
-	userID, _ := ctx.Value("userID").(string)
+
+	userID, _ := ctx.Value(userIDKey).(string)
 	if userID != "" {
-		log.Printf("[%s] %s - user=%s - %v", statusStr, info.FullMethod, userID, time.Since(start))
+		log.Printf("[%s] %s - user=%s - %v", statusStr, fullMethod, userID, time.Since(start))
 	} else {
-		log.Printf("[%s] %s - %v", statusStr, info.FullMethod, time.Since(start))
+		log.Printf("[%s] %s - %v", statusStr, fullMethod, time.Since(start))
 	}
+	return err
+}
+
+// ----------------- Logging: unary + stream wrappers -----------------
+
+func unaryLoggingInterceptor(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
+	var resp interface{}
+	err := logRequest(ctx, info.FullMethod, func() error {
+		var herr error
+		resp, herr = handler(ctx, req)
+		return herr
+	})
 	return resp, err
 }
+
+func streamLoggingInterceptor(srv interface{}, ss grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
+	return logRequest(ss.Context(), info.FullMethod, func() error {
+		return handler(srv, ss)
+	})
+}
+
+// ----------------- Interceptor chaining -----------------
 
 func chainUnaryInterceptors(interceptors ...grpc.UnaryServerInterceptor) grpc.UnaryServerInterceptor {
 	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
@@ -242,6 +258,20 @@ func chainUnaryInterceptors(interceptors ...grpc.UnaryServerInterceptor) grpc.Un
 	}
 }
 
+func chainStreamInterceptors(interceptors ...grpc.StreamServerInterceptor) grpc.StreamServerInterceptor {
+	return func(srv interface{}, ss grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
+		chain := handler
+		for i := len(interceptors) - 1; i >= 0; i-- {
+			next := chain
+			interceptor := interceptors[i]
+			chain = func(currentSrv interface{}, currentSS grpc.ServerStream) error {
+				return interceptor(currentSrv, currentSS, info, next)
+			}
+		}
+		return chain(srv, ss)
+	}
+}
+
 // ----------------- MAIN -----------------
 func main() {
 	users := map[string]string{
@@ -249,34 +279,40 @@ func main() {
 		"bob":   "password456",
 	}
 
-	authManager, err := NewAuthManager("./config/model.conf", "./config/policy.csv", users)
+	authManager, err := auth.NewAuthManager("./config/model.conf", "./config/policy.csv", users)
 	if err != nil {
 		log.Fatalf("Failed to init AuthManager: %v", err)
 	}
 
-	kvServer := NewKVServer()
-	methodAction := map[string]string{
-		"/kv.v1.KVService/Get":   "get",
-		"/kv.v1.KVService/Put":   "put",
-		"/kv.v1.KVService/Watch": "watch",
+	// Pull method->action map from proto descriptors instead of a hard-coded map.
+	methodAction, err := auth.BuildMethodActionMap()
+	if err != nil {
+		log.Fatalf("Failed to build method action map: %v", err)
 	}
+	log.Printf("📋 Registered method actions: %v", methodAction)
+
+	kvServer := NewKVServer()
 
 	grpcServer := grpc.NewServer(
 		grpc.UnaryInterceptor(chainUnaryInterceptors(
-			authInterceptor(authManager, methodAction),
-			loggingInterceptor,
+			unaryAuthInterceptor(authManager, methodAction),
+			unaryLoggingInterceptor,
+		)),
+		grpc.StreamInterceptor(chainStreamInterceptors(
+			streamAuthInterceptor(authManager, methodAction),
+			streamLoggingInterceptor,
 		)),
 	)
 
 	pb.RegisterKVServiceServer(grpcServer, kvServer)
 
-	// Hot reload Casbin policies
+	// Hot reload Casbin policies on SIGHUP
 	sighup := make(chan os.Signal, 1)
 	signal.Notify(sighup, syscall.SIGHUP)
 	go func() {
 		for range sighup {
 			log.Println("Received SIGHUP -> reloading policies")
-			authManager.ReloadPolicies("./config/model.conf", "./config/policy.csv")
+			authManager.ReloadPolicies()
 		}
 	}()
 
