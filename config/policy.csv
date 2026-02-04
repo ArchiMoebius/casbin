@@ -5,3 +5,4 @@ p, reader, kv, get
 p, reader, kv, watch
 g, alice, admin
 g, bob, reader
+g, charlie, reader

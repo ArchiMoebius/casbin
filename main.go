@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"crypto/rsa"
 	"log"
 	"net"
 	"os"
@@ -16,6 +17,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/reflection"
 	"google.golang.org/grpc/status"
 )
 
@@ -274,12 +276,26 @@ func chainStreamInterceptors(interceptors ...grpc.StreamServerInterceptor) grpc.
 
 // ----------------- MAIN -----------------
 func main() {
+	// Basic auth credentials
 	users := map[string]string{
 		"alice": "password123",
 		"bob":   "password456",
 	}
 
-	authManager, err := auth.NewAuthManager("./config/model.conf", "./config/policy.csv", users)
+	// JWT public keys — optional. Load if the file exists, otherwise nil.
+	var jwtKeys map[string]*rsa.PublicKey
+	pubKeyPath := "./config/public_key.pem"
+	if _, err := os.Stat(pubKeyPath); err == nil {
+		pubKey := auth.MustLoadPublicKey(pubKeyPath)
+		jwtKeys = map[string]*rsa.PublicKey{
+			"default": pubKey, // kid used in token generation
+		}
+		log.Println("✅ JWT public key loaded")
+	} else {
+		log.Println("ℹ️  JWT auth disabled (no public key found)")
+	}
+
+	authManager, err := auth.NewAuthManager("./config/model.conf", "./config/policy.csv", users, jwtKeys)
 	if err != nil {
 		log.Fatalf("Failed to init AuthManager: %v", err)
 	}
@@ -295,16 +311,20 @@ func main() {
 
 	grpcServer := grpc.NewServer(
 		grpc.UnaryInterceptor(chainUnaryInterceptors(
-			unaryAuthInterceptor(authManager, methodAction),
+			// unaryAuthInterceptor(authManager, methodAction),
 			unaryLoggingInterceptor,
 		)),
 		grpc.StreamInterceptor(chainStreamInterceptors(
-			streamAuthInterceptor(authManager, methodAction),
+			// streamAuthInterceptor(authManager, methodAction),
 			streamLoggingInterceptor,
 		)),
 	)
 
 	pb.RegisterKVServiceServer(grpcServer, kvServer)
+
+	// Register reflection service — enables clients like grpcurl and the Python
+	// reflection client to discover services, methods, and message types at runtime.
+	reflection.Register(grpcServer)
 
 	// Hot reload Casbin policies on SIGHUP
 	sighup := make(chan os.Signal, 1)

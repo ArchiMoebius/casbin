@@ -2,6 +2,7 @@ package auth
 
 import (
 	"fmt"
+	"strings"
 
 	optionsv1 "kvservice/pkg/gen/v1/options"
 
@@ -40,6 +41,14 @@ func BuildMethodActionMap() (map[string]string, error) {
 			svc := services.Get(i)
 			fullSvcName := fmt.Sprintf("/%s.%s", fd.Package(), svc.Name())
 
+			// Skip reflection services — they're registered by gRPC itself and
+			// bypass user-defined interceptors entirely. We skip them here just
+			// to suppress warnings about missing annotations. Reflection is
+			// metadata-only (lists services/methods) and is safe to expose.
+			if strings.HasPrefix(string(fd.Package()), "grpc.reflection") {
+				continue
+			}
+
 			methods := svc.Methods()
 			for j := 0; j < methods.Len(); j++ {
 				m := methods.Get(j)
@@ -59,7 +68,7 @@ func BuildMethodActionMap() (map[string]string, error) {
 				action, err := actionToString(enumVal)
 				if err != nil {
 					// This will be caught by the len check below if it's
-					// the only method, but log it either way so the admin
+					// the only method, but log it either way so the operator
 					// knows which RPC is misconfigured.
 					fmt.Printf("WARNING: skipping %s/%s: %v\n", fullSvcName, m.Name(), err)
 					continue
