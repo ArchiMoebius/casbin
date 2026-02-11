@@ -16,7 +16,6 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/metadata"
-	"google.golang.org/grpc/reflection"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
@@ -430,7 +429,49 @@ func (p *ProxyServer) StreamInterceptor(
 
 	log.Printf("→ [%s] %s (streaming)", user, info.FullMethod)
 
-	// Wrap the stream to log messages
+	// Check if this is a reflection request - don't wrap it, just call handler directly
+	if strings.HasPrefix(info.FullMethod, "/grpc.reflection.v1alpha.ServerReflection/") ||
+		strings.HasPrefix(info.FullMethod, "/grpc.reflection.v1.ServerReflection/") {
+
+		// Log stream start to file
+		p.logRPC(&LogEntry{
+			Timestamp: time.Now().UTC().Format(time.RFC3339),
+			Service:   info.FullMethod,
+			Method:    info.FullMethod,
+			User:      user,
+			Direction: "stream_start",
+		})
+
+		// Call handler without wrapping (let chained reflection handle it)
+		err := handler(srv, ss)
+
+		duration := time.Since(start)
+		if err != nil {
+			log.Printf("← [%s] %s (streaming) FAILED: %v (%dms)", user, info.FullMethod, err, duration.Milliseconds())
+		} else {
+			log.Printf("← [%s] %s (streaming) ENDED (%dms)", user, info.FullMethod, duration.Milliseconds())
+		}
+
+		// Log stream end to file
+		p.logRPC(&LogEntry{
+			Timestamp:  time.Now().UTC().Format(time.RFC3339),
+			Service:    info.FullMethod,
+			Method:     info.FullMethod,
+			User:       user,
+			DurationMs: duration.Milliseconds(),
+			Direction:  "stream_end",
+			Error: func() string {
+				if err != nil {
+					return err.Error()
+				}
+				return ""
+			}(),
+		})
+
+		return err
+	}
+
+	// For non-reflection requests, wrap the stream to log messages
 	wrappedStream := &loggingServerStream{
 		ServerStream: ss,
 		proxy:        p,
@@ -485,11 +526,7 @@ func (p *ProxyServer) UnknownServiceHandler(
 		return status.Error(codes.Internal, "failed to get method name")
 	}
 
-	// Check if this is a reflection request - forward it directly to backend
-	if strings.HasPrefix(fullMethod, "/grpc.reflection.v1alpha.ServerReflection/") ||
-		strings.HasPrefix(fullMethod, "/grpc.reflection.v1.ServerReflection/") {
-		return p.forwardReflectionRequest(stream, fullMethod)
-	}
+	log.Printf("🔍 UnknownServiceHandler called for: %s", fullMethod)
 
 	// Parse service and method
 	serviceName, methodName, err := parseFullMethod(fullMethod)
@@ -534,73 +571,6 @@ func (p *ProxyServer) UnknownServiceHandler(
 	}
 
 	return status.Error(codes.Unimplemented, "client/bidirectional streaming not yet supported")
-}
-
-// forwardReflectionRequest forwards reflection requests directly to the backend
-func (p *ProxyServer) forwardReflectionRequest(stream grpc.ServerStream, fullMethod string) error {
-	// Forward metadata
-	md, _ := metadata.FromIncomingContext(stream.Context())
-	ctx := metadata.NewOutgoingContext(stream.Context(), md)
-
-	// Create a bidirectional stream to the backend
-	clientStream, err := p.backendConn.NewStream(
-		ctx,
-		&grpc.StreamDesc{
-			StreamName:    "ServerReflectionInfo",
-			ServerStreams: true,
-			ClientStreams: true,
-		},
-		fullMethod,
-	)
-	if err != nil {
-		return err
-	}
-
-	// Forward messages bidirectionally
-	errChan := make(chan error, 2)
-
-	// Forward client -> backend
-	go func() {
-		for {
-			// Use a raw message type since we don't know the schema
-			var msg interface{}
-			if err := stream.RecvMsg(&msg); err != nil {
-				if err == io.EOF {
-					clientStream.CloseSend()
-					errChan <- nil
-					return
-				}
-				errChan <- err
-				return
-			}
-			if err := clientStream.SendMsg(msg); err != nil {
-				errChan <- err
-				return
-			}
-		}
-	}()
-
-	// Forward backend -> client
-	go func() {
-		for {
-			var msg interface{}
-			if err := clientStream.RecvMsg(&msg); err != nil {
-				if err == io.EOF {
-					errChan <- nil
-					return
-				}
-				errChan <- err
-				return
-			}
-			if err := stream.SendMsg(msg); err != nil {
-				errChan <- err
-				return
-			}
-		}
-	}()
-
-	// Wait for either direction to error/complete
-	return <-errChan
 }
 
 func (p *ProxyServer) forwardUnary(
@@ -695,6 +665,123 @@ func split(s string, sep byte) []string {
 	return parts
 }
 
+// ChainedReflectionServer wraps and chains to backend reflection
+type ChainedReflectionServer struct {
+	backendConn *grpc.ClientConn
+}
+
+func NewChainedReflectionServer(backendConn *grpc.ClientConn) *ChainedReflectionServer {
+	return &ChainedReflectionServer{
+		backendConn: backendConn,
+	}
+}
+
+func (s *ChainedReflectionServer) ServerReflectionInfo(stream reflectionpb.ServerReflection_ServerReflectionInfoServer) error {
+	log.Printf("🔍 Chained reflection request started")
+
+	backendClient := reflectionpb.NewServerReflectionClient(s.backendConn)
+	backendStream, err := backendClient.ServerReflectionInfo(stream.Context())
+	if err != nil {
+		log.Printf("❌ Failed to connect to backend reflection: %v", err)
+		return err
+	}
+
+	// Create channels for coordinating bidirectional streaming
+	clientDone := make(chan error, 1)
+	backendDone := make(chan error, 1)
+
+	// Forward client -> backend
+	go func() {
+		for {
+			req, err := stream.Recv()
+			if err == io.EOF {
+				backendStream.CloseSend()
+				clientDone <- nil
+				return
+			}
+			if err != nil {
+				clientDone <- err
+				return
+			}
+
+			log.Printf("🔍 Reflection request: %+v", req.MessageRequest)
+
+			if err := backendStream.Send(req); err != nil {
+				clientDone <- err
+				return
+			}
+		}
+	}()
+
+	// Forward backend -> client
+	go func() {
+		for {
+			resp, err := backendStream.Recv()
+			if err == io.EOF {
+				backendDone <- nil
+				return
+			}
+			if err != nil {
+				backendDone <- err
+				return
+			}
+
+			log.Printf("🔍 Sending response back to client")
+
+			if err := stream.Send(resp); err != nil {
+				backendDone <- err
+				return
+			}
+		}
+	}()
+
+	// Wait for either direction to complete
+	var clientErr, backendErr error
+
+	select {
+	case clientErr = <-clientDone:
+		log.Printf("🔍 Client stream finished: %v", clientErr)
+	case backendErr = <-backendDone:
+		log.Printf("🔍 Backend stream finished first: %v", backendErr)
+		return backendErr
+	}
+
+	// Client finished, wait for backend to finish sending
+	select {
+	case backendErr = <-backendDone:
+		log.Printf("🔍 Backend stream finished: %v", backendErr)
+	case <-time.After(5 * time.Second):
+		log.Printf("⚠️ Timeout waiting for backend responses")
+		return status.Error(codes.DeadlineExceeded, "timeout waiting for backend")
+	}
+
+	// Return backend error if any, otherwise client error
+	if backendErr != nil {
+		return backendErr
+	}
+	return clientErr
+}
+
+func (s *ChainedReflectionServer) handleListServices(
+	stream reflectionpb.ServerReflection_ServerReflectionInfoServer,
+	backendStream reflectionpb.ServerReflection_ServerReflectionInfoClient,
+	req *reflectionpb.ServerReflectionRequest,
+) error {
+	// Get backend services
+	if err := backendStream.Send(req); err != nil {
+		return err
+	}
+
+	backendResp, err := backendStream.Recv()
+	if err != nil {
+		return err
+	}
+
+	// For now, just return backend services (since proxy reflection service is already implicit)
+	// You could merge them here if needed
+	return stream.Send(backendResp)
+}
+
 func main() {
 	backendAddr := os.Getenv("BACKEND_ADDR")
 	if backendAddr == "" {
@@ -727,8 +814,9 @@ func main() {
 		grpc.UnknownServiceHandler(proxy.UnknownServiceHandler),
 	)
 
-	// Enable reflection on the proxy too
-	reflection.Register(grpcServer)
+	// Register the chained reflection service that forwards to backend
+	chainedReflection := NewChainedReflectionServer(proxy.backendConn)
+	reflectionpb.RegisterServerReflectionServer(grpcServer, chainedReflection)
 
 	lis, err := net.Listen("tcp", proxyAddr)
 	if err != nil {
