@@ -19,17 +19,24 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	KVService_Get_FullMethodName   = "/kv.v1.KVService/Get"
-	KVService_Put_FullMethodName   = "/kv.v1.KVService/Put"
-	KVService_Watch_FullMethodName = "/kv.v1.KVService/Watch"
+	KVService_ListKeys_FullMethodName = "/kv.v1.KVService/ListKeys"
+	KVService_Get_FullMethodName      = "/kv.v1.KVService/Get"
+	KVService_Put_FullMethodName      = "/kv.v1.KVService/Put"
+	KVService_Watch_FullMethodName    = "/kv.v1.KVService/Watch"
 )
 
 // KVServiceClient is the client API for KVService service.
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type KVServiceClient interface {
+	// ── Bootstrap: populate the key completion cache ─────────────────────────
+	// No cmd — invisible to the user; fires automatically on connect.
+	ListKeys(ctx context.Context, in *ListKeysRequest, opts ...grpc.CallOption) (*ListKeysResponse, error)
+	// ── key.get ──────────────────────────────────────────────────────────────
 	Get(ctx context.Context, in *GetRequest, opts ...grpc.CallOption) (*GetResponse, error)
+	// ── key.put ──────────────────────────────────────────────────────────────
 	Put(ctx context.Context, in *PutRequest, opts ...grpc.CallOption) (*PutResponse, error)
+	// ── key.watch ────────────────────────────────────────────────────────────
 	Watch(ctx context.Context, in *WatchRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[WatchResponse], error)
 }
 
@@ -39,6 +46,16 @@ type kVServiceClient struct {
 
 func NewKVServiceClient(cc grpc.ClientConnInterface) KVServiceClient {
 	return &kVServiceClient{cc}
+}
+
+func (c *kVServiceClient) ListKeys(ctx context.Context, in *ListKeysRequest, opts ...grpc.CallOption) (*ListKeysResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListKeysResponse)
+	err := c.cc.Invoke(ctx, KVService_ListKeys_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 func (c *kVServiceClient) Get(ctx context.Context, in *GetRequest, opts ...grpc.CallOption) (*GetResponse, error) {
@@ -84,8 +101,14 @@ type KVService_WatchClient = grpc.ServerStreamingClient[WatchResponse]
 // All implementations must embed UnimplementedKVServiceServer
 // for forward compatibility.
 type KVServiceServer interface {
+	// ── Bootstrap: populate the key completion cache ─────────────────────────
+	// No cmd — invisible to the user; fires automatically on connect.
+	ListKeys(context.Context, *ListKeysRequest) (*ListKeysResponse, error)
+	// ── key.get ──────────────────────────────────────────────────────────────
 	Get(context.Context, *GetRequest) (*GetResponse, error)
+	// ── key.put ──────────────────────────────────────────────────────────────
 	Put(context.Context, *PutRequest) (*PutResponse, error)
+	// ── key.watch ────────────────────────────────────────────────────────────
 	Watch(*WatchRequest, grpc.ServerStreamingServer[WatchResponse]) error
 	mustEmbedUnimplementedKVServiceServer()
 }
@@ -97,6 +120,9 @@ type KVServiceServer interface {
 // pointer dereference when methods are called.
 type UnimplementedKVServiceServer struct{}
 
+func (UnimplementedKVServiceServer) ListKeys(context.Context, *ListKeysRequest) (*ListKeysResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListKeys not implemented")
+}
 func (UnimplementedKVServiceServer) Get(context.Context, *GetRequest) (*GetResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method Get not implemented")
 }
@@ -125,6 +151,24 @@ func RegisterKVServiceServer(s grpc.ServiceRegistrar, srv KVServiceServer) {
 		t.testEmbeddedByValue()
 	}
 	s.RegisterService(&KVService_ServiceDesc, srv)
+}
+
+func _KVService_ListKeys_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListKeysRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(KVServiceServer).ListKeys(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: KVService_ListKeys_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(KVServiceServer).ListKeys(ctx, req.(*ListKeysRequest))
+	}
+	return interceptor(ctx, in, info, handler)
 }
 
 func _KVService_Get_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
@@ -181,6 +225,10 @@ var KVService_ServiceDesc = grpc.ServiceDesc{
 	ServiceName: "kv.v1.KVService",
 	HandlerType: (*KVServiceServer)(nil),
 	Methods: []grpc.MethodDesc{
+		{
+			MethodName: "ListKeys",
+			Handler:    _KVService_ListKeys_Handler,
+		},
 		{
 			MethodName: "Get",
 			Handler:    _KVService_Get_Handler,

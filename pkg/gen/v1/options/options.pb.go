@@ -22,17 +22,16 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
-// Action enumerates every permission a method can require.
-// Adding a new permission is: add a variant here, annotate the RPC, update policy.csv.
-// Zero value (ACTION_UNSPECIFIED) is intentionally not a valid permission —
-// any RPC that forgets the annotation will be denied.
+// Action enum — every value must be listed here or the server will log
+// "unknown or unspecified Action enum value" and skip the method.
 type Action int32
 
 const (
 	Action_ACTION_UNSPECIFIED Action = 0
 	Action_ACTION_GET         Action = 1
 	Action_ACTION_PUT         Action = 2
-	Action_ACTION_WATCH       Action = 3
+	Action_ACTION_DELETE      Action = 3
+	Action_ACTION_WATCH       Action = 5
 )
 
 // Enum value maps for Action.
@@ -41,13 +40,15 @@ var (
 		0: "ACTION_UNSPECIFIED",
 		1: "ACTION_GET",
 		2: "ACTION_PUT",
-		3: "ACTION_WATCH",
+		3: "ACTION_DELETE",
+		5: "ACTION_WATCH",
 	}
 	Action_value = map[string]int32{
 		"ACTION_UNSPECIFIED": 0,
 		"ACTION_GET":         1,
 		"ACTION_PUT":         2,
-		"ACTION_WATCH":       3,
+		"ACTION_DELETE":      3,
+		"ACTION_WATCH":       5,
 	}
 )
 
@@ -78,6 +79,52 @@ func (Action) EnumDescriptor() ([]byte, []int) {
 	return file_v1_options_options_proto_rawDescGZIP(), []int{0}
 }
 
+// Per-method option that declares which Action is required to call this RPC.
+// The server middleware reads this via reflection to enforce authorization.
+type MethodOptions struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	RequiredAction Action                 `protobuf:"varint,1,opt,name=required_action,json=requiredAction,proto3,enum=options.v1.Action" json:"required_action,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *MethodOptions) Reset() {
+	*x = MethodOptions{}
+	mi := &file_v1_options_options_proto_msgTypes[0]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *MethodOptions) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*MethodOptions) ProtoMessage() {}
+
+func (x *MethodOptions) ProtoReflect() protoreflect.Message {
+	mi := &file_v1_options_options_proto_msgTypes[0]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use MethodOptions.ProtoReflect.Descriptor instead.
+func (*MethodOptions) Descriptor() ([]byte, []int) {
+	return file_v1_options_options_proto_rawDescGZIP(), []int{0}
+}
+
+func (x *MethodOptions) GetRequiredAction() Action {
+	if x != nil {
+		return x.RequiredAction
+	}
+	return Action_ACTION_UNSPECIFIED
+}
+
 var file_v1_options_options_proto_extTypes = []protoimpl.ExtensionInfo{
 	{
 		ExtendedType:  (*descriptorpb.MethodOptions)(nil),
@@ -100,14 +147,17 @@ var File_v1_options_options_proto protoreflect.FileDescriptor
 const file_v1_options_options_proto_rawDesc = "" +
 	"\n" +
 	"\x18v1/options/options.proto\x12\n" +
-	"options.v1\x1a google/protobuf/descriptor.proto*R\n" +
+	"options.v1\x1a google/protobuf/descriptor.proto\"L\n" +
+	"\rMethodOptions\x12;\n" +
+	"\x0frequired_action\x18\x01 \x01(\x0e2\x12.options.v1.ActionR\x0erequiredAction*e\n" +
 	"\x06Action\x12\x16\n" +
 	"\x12ACTION_UNSPECIFIED\x10\x00\x12\x0e\n" +
 	"\n" +
 	"ACTION_GET\x10\x01\x12\x0e\n" +
 	"\n" +
-	"ACTION_PUT\x10\x02\x12\x10\n" +
-	"\fACTION_WATCH\x10\x03:]\n" +
+	"ACTION_PUT\x10\x02\x12\x11\n" +
+	"\rACTION_DELETE\x10\x03\x12\x10\n" +
+	"\fACTION_WATCH\x10\x05:]\n" +
 	"\x0frequired_action\x12\x1e.google.protobuf.MethodOptions\x18І\x03 \x01(\x0e2\x12.options.v1.ActionR\x0erequiredActionB(Z&kvservice/pkg/gen/v1/options;optionsv1b\x06proto3"
 
 var (
@@ -123,18 +173,21 @@ func file_v1_options_options_proto_rawDescGZIP() []byte {
 }
 
 var file_v1_options_options_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
+var file_v1_options_options_proto_msgTypes = make([]protoimpl.MessageInfo, 1)
 var file_v1_options_options_proto_goTypes = []any{
 	(Action)(0),                        // 0: options.v1.Action
-	(*descriptorpb.MethodOptions)(nil), // 1: google.protobuf.MethodOptions
+	(*MethodOptions)(nil),              // 1: options.v1.MethodOptions
+	(*descriptorpb.MethodOptions)(nil), // 2: google.protobuf.MethodOptions
 }
 var file_v1_options_options_proto_depIdxs = []int32{
-	1, // 0: options.v1.required_action:extendee -> google.protobuf.MethodOptions
-	0, // 1: options.v1.required_action:type_name -> options.v1.Action
-	2, // [2:2] is the sub-list for method output_type
-	2, // [2:2] is the sub-list for method input_type
-	1, // [1:2] is the sub-list for extension type_name
-	0, // [0:1] is the sub-list for extension extendee
-	0, // [0:0] is the sub-list for field type_name
+	0, // 0: options.v1.MethodOptions.required_action:type_name -> options.v1.Action
+	2, // 1: options.v1.required_action:extendee -> google.protobuf.MethodOptions
+	0, // 2: options.v1.required_action:type_name -> options.v1.Action
+	3, // [3:3] is the sub-list for method output_type
+	3, // [3:3] is the sub-list for method input_type
+	2, // [2:3] is the sub-list for extension type_name
+	1, // [1:2] is the sub-list for extension extendee
+	0, // [0:1] is the sub-list for field type_name
 }
 
 func init() { file_v1_options_options_proto_init() }
@@ -148,13 +201,14 @@ func file_v1_options_options_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_v1_options_options_proto_rawDesc), len(file_v1_options_options_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   0,
+			NumMessages:   1,
 			NumExtensions: 1,
 			NumServices:   0,
 		},
 		GoTypes:           file_v1_options_options_proto_goTypes,
 		DependencyIndexes: file_v1_options_options_proto_depIdxs,
 		EnumInfos:         file_v1_options_options_proto_enumTypes,
+		MessageInfos:      file_v1_options_options_proto_msgTypes,
 		ExtensionInfos:    file_v1_options_options_proto_extTypes,
 	}.Build()
 	File_v1_options_options_proto = out.File

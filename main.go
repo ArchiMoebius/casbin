@@ -7,6 +7,7 @@ import (
 	"net"
 	"os"
 	"os/signal"
+	"sort"
 	"sync"
 	"syscall"
 	"time"
@@ -56,6 +57,28 @@ func (s *KVServer) Get(ctx context.Context, req *pb.GetRequest) (*pb.GetResponse
 	}
 
 	return &pb.GetResponse{Value: val}, nil
+}
+
+// ListKeys returns every key currently in the store, sorted lexicographically.
+// It is used by the REPL client as a completion source — no pagination needed
+// for typical key-value store sizes, but a prefix filter is provided so the
+// client can narrow candidates as the user types.
+func (s *KVServer) ListKeys(ctx context.Context, req *pb.ListKeysRequest) (*pb.ListKeysResponse, error) {
+	if req == nil {
+		return nil, status.Error(codes.InvalidArgument, "request must not be nil")
+	}
+
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	keys := make([]string, 0, len(s.store))
+	for k := range s.store {
+		keys = append(keys, k)
+	}
+
+	sort.Strings(keys)
+
+	return &pb.ListKeysResponse{Keys: keys}, nil
 }
 
 func (s *KVServer) Put(ctx context.Context, req *pb.PutRequest) (*pb.PutResponse, error) {

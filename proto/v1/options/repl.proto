@@ -1,0 +1,115 @@
+syntax = "proto3";
+
+package repl.v1;
+
+option go_package = "kvservice/pkg/gen/v1/options;optionsv1";
+
+import "google/protobuf/descriptor.proto";
+
+// ─────────────────────────────────────────────────────
+// Method-level option
+// ─────────────────────────────────────────────────────
+message MethodRepl {
+  string           cmd                     = 1; // dot-path: "key.get"
+  string           description             = 2;
+  repeated string  aliases                 = 3;
+  repeated FieldCompletion completions     = 4;
+  DisplaySpec      display                 = 5;
+  bool             bootstrap               = 6;
+  bool             refresh_after_mutation  = 7;
+}
+
+// ─────────────────────────────────────────────────────
+// Message-level option
+// ─────────────────────────────────────────────────────
+message MessageRepl {
+  DisplaySpec display = 1;
+}
+
+// ─────────────────────────────────────────────────────
+// Field-level option
+// ─────────────────────────────────────────────────────
+message FieldRepl {
+  string        label        = 1;
+  bool          hidden       = 2;
+  CellRenderer  renderer     = 3;
+  int32         column_width = 4;
+}
+
+// ─────────────────────────────────────────────────────
+// Completion
+// ─────────────────────────────────────────────────────
+message FieldCompletion {
+  string  field           = 1;
+  string  source_rpc      = 2;
+  string  source_field    = 3;
+  string  source_request  = 4;
+  bool    live            = 5;
+
+  // Projection (complex message completion)
+  string value_field                           = 6;
+  repeated CompletionDisplayField display_fields = 7;
+  repeated CompletionFilter filters            = 8;
+  bool    show_headers                         = 9;
+  string  column_separator                     = 10;
+}
+
+message CompletionDisplayField {
+  string       path           = 1;
+  string       label          = 2;
+  int32        width          = 3;
+  CellRenderer renderer       = 4;
+  string       join_separator = 5;
+  string       style          = 6;
+}
+
+message CompletionFilter {
+  string field = 1;
+  oneof condition {
+    string     eq      = 2;
+    string     neq     = 3;
+    bool       present = 4;
+    StringList in_set  = 5;
+  }
+}
+
+message StringList { repeated string values = 1; }
+
+// ─────────────────────────────────────────────────────
+// Display
+// ─────────────────────────────────────────────────────
+message DisplaySpec {
+  DisplayMode     mode            = 1;
+  repeated string columns         = 2;
+  string          stream_separator = 3;
+  string          title_field     = 4;
+  string          success_message = 5;
+  bool            expand_nested   = 6;
+}
+
+enum DisplayMode {
+  DISPLAY_AUTO   = 0;
+  DISPLAY_TABLE  = 1;
+  DISPLAY_KV     = 2;
+  DISPLAY_JSON   = 3;
+  DISPLAY_STREAM = 4;
+  DISPLAY_SILENT = 5;
+  DISPLAY_RAW    = 6;
+}
+
+enum CellRenderer {
+  CELL_DEFAULT   = 0;
+  CELL_TIMESTAMP = 1;
+  CELL_BYTES     = 2;
+  CELL_BOOL_ICON = 3;
+  CELL_JSON      = 4;
+}
+
+// ─────────────────────────────────────────────────────
+// Extension registration
+// ─────────────────────────────────────────────────────
+// Note: 'method', 'message', 'field' are reserved keywords in proto3.
+// Extension fields use _opts suffix to avoid parse errors.
+extend google.protobuf.MethodOptions  { MethodRepl  method_opts  = 50100; }
+extend google.protobuf.MessageOptions { MessageRepl message_opts = 50101; }
+extend google.protobuf.FieldOptions   { FieldRepl   field_opts   = 50102; }

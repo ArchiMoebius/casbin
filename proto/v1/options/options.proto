@@ -1,20 +1,24 @@
 syntax = "proto3";
-
 package options.v1;
 
 option go_package = "kvservice/pkg/gen/v1/options;optionsv1";
 
 import "google/protobuf/descriptor.proto";
 
-// Action enumerates every permission a method can require.
-// Adding a new permission is: add a variant here, annotate the RPC, update policy.csv.
-// Zero value (ACTION_UNSPECIFIED) is intentionally not a valid permission —
-// any RPC that forgets the annotation will be denied.
+// Action enum — every value must be listed here or the server will log
+// "unknown or unspecified Action enum value" and skip the method.
 enum Action {
   ACTION_UNSPECIFIED = 0;
   ACTION_GET         = 1;
   ACTION_PUT         = 2;
-  ACTION_WATCH       = 3;
+  ACTION_DELETE      = 3;
+  ACTION_WATCH       = 5;
+}
+
+// Per-method option that declares which Action is required to call this RPC.
+// The server middleware reads this via reflection to enforce authorization.
+message MethodOptions {
+  Action required_action = 1;
 }
 
 extend google.protobuf.MethodOptions {

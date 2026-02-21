@@ -1,49 +1,114 @@
 syntax = "proto3";
-
 package kv.v1;
 
 option go_package = "kvservice/pkg/gen/v1/kv;kvv1";
 
 import "v1/options/options.proto";
+import "v1/options/repl.proto";
 
+/**/
 service KVService {
-  rpc Get(GetRequest) returns (GetResponse) {
+
+  // ── Bootstrap: populate the key completion cache ─────────────────────────
+  // No cmd — invisible to the user; fires automatically on connect.
+  rpc ListKeys(ListKeysRequest) returns (ListKeysResponse) {
+    option (repl.v1.method_opts) = {
+      bootstrap:              true
+      refresh_after_mutation: true
+      display: { mode: DISPLAY_SILENT }
+    };
     option (options.v1.required_action) = ACTION_GET;
   }
 
+  // ── key.get ──────────────────────────────────────────────────────────────
+  rpc Get(GetRequest) returns (GetResponse) {
+    option (repl.v1.method_opts) = {
+      cmd:         "key.get"
+      description: "Fetch the value of a key"
+      aliases:     ["get"]
+      completions: [{
+        field:        "key"
+        source_rpc:   "kv.v1.KVService.ListKeys"
+        source_field: "keys"
+      }]
+      display: { mode: DISPLAY_KV }
+    };
+    option (options.v1.required_action) = ACTION_GET;
+  }
+
+  // ── key.put ──────────────────────────────────────────────────────────────
   rpc Put(PutRequest) returns (PutResponse) {
+    option (repl.v1.method_opts) = {
+      cmd:         "key.put"
+      description: "Write a value to a key"
+      aliases:     ["put", "set"]
+      completions: [{
+        field:        "key"
+        source_rpc:   "kv.v1.KVService.ListKeys"
+        source_field: "keys"
+        live:         true
+      }]
+      display: {
+        mode:            DISPLAY_SILENT
+        success_message: "✔ {key} = {value}"
+      }
+    };
     option (options.v1.required_action) = ACTION_PUT;
   }
 
+  // ── key.watch ────────────────────────────────────────────────────────────
   rpc Watch(WatchRequest) returns (stream WatchResponse) {
+    option (repl.v1.method_opts) = {
+      cmd:         "key.watch"
+      description: "Stream live updates for a key"
+      aliases:     ["watch"]
+      completions: [{
+        field:        "key"
+        source_rpc:   "kv.v1.KVService.ListKeys"
+        source_field: "keys"
+      }]
+      display: {
+        mode:             DISPLAY_STREAM
+        columns:          ["key", "value", "user_id", "timestamp"]
+        stream_separator: "─"
+      }
+    };
     option (options.v1.required_action) = ACTION_WATCH;
   }
 }
 
-message GetRequest {
-  string key = 1;
+// ── Messages ──────────────────────────────────────────────────────────────
+
+message ListKeysRequest {}
+message ListKeysResponse {
+  repeated string keys = 1;
 }
 
+message GetRequest  { string key = 1; }
 message GetResponse {
+  option (repl.v1.message_opts) = { display: { mode: DISPLAY_KV } };
   string value = 1;
 }
 
-message PutRequest {
-  string key   = 1;
-  string value = 2;
-}
-
+message PutRequest  { string key = 1; string value = 2; }
 message PutResponse {
-  bool success = 1;
+  bool success = 1 [(repl.v1.field_opts) = { renderer: CELL_BOOL_ICON }];
 }
 
-message WatchRequest {
-  string key = 1;
-}
-
+message WatchRequest { string key = 1; }
 message WatchResponse {
+  option (repl.v1.message_opts) = {
+    display: {
+      mode:    DISPLAY_STREAM
+      columns: ["timestamp", "key", "value", "user_id"]
+    }
+  };
+
   string key       = 1;
   string value     = 2;
-  string user_id   = 3;
-  int64  timestamp = 4;
+  string user_id   = 3 [(repl.v1.field_opts) = { label: "user" }];
+  int64  timestamp = 4 [(repl.v1.field_opts) = {
+    label:    "time"
+    renderer: CELL_TIMESTAMP
+  }];
 }
