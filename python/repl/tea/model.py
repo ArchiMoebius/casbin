@@ -4,28 +4,27 @@ repl/tea/model.py
 Immutable Model + auxiliary state types.
 No I/O. No grpc. No proto imports.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field, replace
-from enum import Enum, auto
+from enum import Enum
 from typing import Any, Optional
 
 from repl.schema.ui_spec import CmdNode, FieldSpec, UISpec
 
 
 class ReplMode(Enum):
-    NORMAL  = "normal"
-    WIZARD  = "wizard"   # field-by-field guided input
-    CONFIRM = "confirm"  # awaiting yes/no
+    NORMAL = "normal"
+    WIZARD = "wizard"
+    CONFIRM = "confirm"
 
 
 @dataclass(frozen=True)
 class WizardState:
-    node:           CmdNode
-    # Fields still needing input (ordered)
+    node: CmdNode
     fields_pending: tuple[FieldSpec, ...]
-    # Already-collected field values (field.name → raw string)
-    collected:      tuple[tuple[str, str], ...]   # ordered pairs for hashing
+    collected: tuple[tuple[str, str], ...]
 
     def next_field(self) -> Optional[FieldSpec]:
         return self.fields_pending[0] if self.fields_pending else None
@@ -40,32 +39,66 @@ class WizardState:
 @dataclass(frozen=True)
 class RpcResult:
     cmd_path: str
-    result:   Any   # dict or list[dict]
+    result: Any
 
 
 @dataclass(frozen=True)
 class Model:
     # ── Connection ──────────────────────────────────────────────────────────
-    server:       str
-    connected:    bool
+    server: str
+    connected: bool
 
-    # ── Schema (compiled once at bootstrap) ─────────────────────────────────
-    ui_spec:      UISpec
+    # ── Schema ──────────────────────────────────────────────────────────────
+    ui_spec: UISpec
 
     # ── Session ─────────────────────────────────────────────────────────────
-    headers:      tuple[tuple[str, str], ...]   # ordered (name, value) pairs
-    variables:    tuple[tuple[str, str], ...]   # ordered (name, value) pairs
-    history:      tuple[str, ...]
+    headers: tuple[tuple[str, str], ...]
+    variables: tuple[tuple[str, str], ...]
+    history: tuple[str, ...]
+
+    # ── Namespace (use stack) ────────────────────────────────────────────────
+    # Each element is one dot-path segment, e.g. ("key",) or ("key", "search").
+    # The active prefix is ".".join(namespace).
+    namespace: tuple[str, ...]
 
     # ── UI state ────────────────────────────────────────────────────────────
-    last_response:  Optional[RpcResult]
-    error:          Optional[str]
-    mode:           ReplMode
-    wizard_state:   Optional[WizardState]
-    stream_active:  bool
+    last_response: Optional[RpcResult]
+    error: Optional[str]
+    mode: ReplMode
+    wizard_state: Optional[WizardState]
+    stream_active: bool
+    auth_header: Optional[str]
 
-    # ── Auth (initialised from CLI flags) ────────────────────────────────────
-    auth_header:    Optional[str]
+    # ── Derived helpers ──────────────────────────────────────────────────────
+
+    def namespace_prefix(self) -> str:
+        """Active dot-path prefix, e.g. 'key' or 'key.search'. Empty = root."""
+        return ".".join(self.namespace)
+
+    def push_namespace(self, segment: str) -> "Model":
+        return replace(self, namespace=self.namespace + (segment,))
+
+    def pop_namespace(self) -> "Model":
+        if not self.namespace:
+            return self
+        return replace(self, namespace=self.namespace[:-1])
+
+    def resolve_cmd(self, word: str) -> Optional[str]:
+        """
+        Return the canonical cmd path for `word`, respecting the active
+        namespace prefix.
+
+        Resolution order:
+          1. Exact match (absolute path or already-prefixed)
+          2. namespace.prefix + "." + word
+        """
+        if self.ui_spec.find_cmd(word) is not None:
+            return word
+        if self.namespace:
+            prefixed = self.namespace_prefix() + "." + word
+            if self.ui_spec.find_cmd(prefixed) is not None:
+                return prefixed
+        return None
 
     def headers_dict(self) -> dict[str, str]:
         return dict(self.headers)
@@ -74,19 +107,19 @@ class Model:
         return dict(self.variables)
 
     def with_header(self, name: str, value: str) -> "Model":
-        existing = dict(self.headers)
-        existing[name.lower()] = value
-        return replace(self, headers=tuple(existing.items()))
+        d = dict(self.headers)
+        d[name.lower()] = value
+        return replace(self, headers=tuple(d.items()))
 
     def without_header(self, name: str) -> "Model":
-        existing = dict(self.headers)
-        existing.pop(name.lower(), None)
-        return replace(self, headers=tuple(existing.items()))
+        d = dict(self.headers)
+        d.pop(name.lower(), None)
+        return replace(self, headers=tuple(d.items()))
 
     def with_variable(self, name: str, value: str) -> "Model":
-        existing = dict(self.variables)
-        existing[name] = value
-        return replace(self, variables=tuple(existing.items()))
+        d = dict(self.variables)
+        d[name] = value
+        return replace(self, variables=tuple(d.items()))
 
 
 def initial_model(
@@ -101,6 +134,7 @@ def initial_model(
         headers=(),
         variables=(),
         history=(),
+        namespace=(),
         last_response=None,
         error=None,
         mode=ReplMode.NORMAL,

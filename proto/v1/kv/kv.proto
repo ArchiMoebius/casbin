@@ -6,21 +6,19 @@ option go_package = "kvservice/pkg/gen/v1/kv;kvv1";
 import "v1/options/options.proto";
 import "v1/options/repl.proto";
 
-/**/
 service KVService {
 
-  // ── Bootstrap: populate the key completion cache ─────────────────────────
-  // No cmd — invisible to the user; fires automatically on connect.
+  // Bootstrap: populate key completion cache on connect.
+  // No cmd — never shown as a user command.
   rpc ListKeys(ListKeysRequest) returns (ListKeysResponse) {
     option (repl.v1.method_opts) = {
-      bootstrap:              true
-      refresh_after_mutation: true
-      display: { mode: DISPLAY_SILENT }
+      bootstrap: true
+      display:   { mode: DISPLAY_SILENT }
     };
     option (options.v1.required_action) = ACTION_GET;
   }
 
-  // ── key.get ──────────────────────────────────────────────────────────────
+  // key.get
   rpc Get(GetRequest) returns (GetResponse) {
     option (repl.v1.method_opts) = {
       cmd:         "key.get"
@@ -36,12 +34,14 @@ service KVService {
     option (options.v1.required_action) = ACTION_GET;
   }
 
-  // ── key.put ──────────────────────────────────────────────────────────────
+  // key.put — marks refresh_after_mutation so the key list is re-fetched
+  // after every successful write.
   rpc Put(PutRequest) returns (PutResponse) {
     option (repl.v1.method_opts) = {
-      cmd:         "key.put"
-      description: "Write a value to a key"
-      aliases:     ["put", "set"]
+      cmd:                    "key.put"
+      description:            "Write a value to a key"
+      aliases:                ["put", "set"]
+      refresh_after_mutation: true
       completions: [{
         field:        "key"
         source_rpc:   "kv.v1.KVService.ListKeys"
@@ -56,7 +56,7 @@ service KVService {
     option (options.v1.required_action) = ACTION_PUT;
   }
 
-  // ── key.watch ────────────────────────────────────────────────────────────
+  // key.watch
   rpc Watch(WatchRequest) returns (stream WatchResponse) {
     option (repl.v1.method_opts) = {
       cmd:         "key.watch"
@@ -77,12 +77,8 @@ service KVService {
   }
 }
 
-// ── Messages ──────────────────────────────────────────────────────────────
-
-message ListKeysRequest {}
-message ListKeysResponse {
-  repeated string keys = 1;
-}
+message ListKeysRequest  {}
+message ListKeysResponse { repeated string keys = 1; }
 
 message GetRequest  { string key = 1; }
 message GetResponse {
@@ -95,20 +91,13 @@ message PutResponse {
   bool success = 1 [(repl.v1.field_opts) = { renderer: CELL_BOOL_ICON }];
 }
 
-message WatchRequest { string key = 1; }
+message WatchRequest  { string key = 1; }
 message WatchResponse {
   option (repl.v1.message_opts) = {
-    display: {
-      mode:    DISPLAY_STREAM
-      columns: ["timestamp", "key", "value", "user_id"]
-    }
+    display: { mode: DISPLAY_STREAM  columns: ["timestamp","key","value","user_id"] }
   };
-
   string key       = 1;
   string value     = 2;
   string user_id   = 3 [(repl.v1.field_opts) = { label: "user" }];
-  int64  timestamp = 4 [(repl.v1.field_opts) = {
-    label:    "time"
-    renderer: CELL_TIMESTAMP
-  }];
+  int64  timestamp = 4 [(repl.v1.field_opts) = { label: "time"  renderer: CELL_TIMESTAMP }];
 }

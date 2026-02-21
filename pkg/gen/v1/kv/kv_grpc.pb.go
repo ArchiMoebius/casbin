@@ -29,14 +29,15 @@ const (
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type KVServiceClient interface {
-	// ── Bootstrap: populate the key completion cache ─────────────────────────
-	// No cmd — invisible to the user; fires automatically on connect.
+	// Bootstrap: populate key completion cache on connect.
+	// No cmd — never shown as a user command.
 	ListKeys(ctx context.Context, in *ListKeysRequest, opts ...grpc.CallOption) (*ListKeysResponse, error)
-	// ── key.get ──────────────────────────────────────────────────────────────
+	// key.get
 	Get(ctx context.Context, in *GetRequest, opts ...grpc.CallOption) (*GetResponse, error)
-	// ── key.put ──────────────────────────────────────────────────────────────
+	// key.put — marks refresh_after_mutation so the key list is re-fetched
+	// after every successful write.
 	Put(ctx context.Context, in *PutRequest, opts ...grpc.CallOption) (*PutResponse, error)
-	// ── key.watch ────────────────────────────────────────────────────────────
+	// key.watch
 	Watch(ctx context.Context, in *WatchRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[WatchResponse], error)
 }
 
@@ -101,14 +102,15 @@ type KVService_WatchClient = grpc.ServerStreamingClient[WatchResponse]
 // All implementations must embed UnimplementedKVServiceServer
 // for forward compatibility.
 type KVServiceServer interface {
-	// ── Bootstrap: populate the key completion cache ─────────────────────────
-	// No cmd — invisible to the user; fires automatically on connect.
+	// Bootstrap: populate key completion cache on connect.
+	// No cmd — never shown as a user command.
 	ListKeys(context.Context, *ListKeysRequest) (*ListKeysResponse, error)
-	// ── key.get ──────────────────────────────────────────────────────────────
+	// key.get
 	Get(context.Context, *GetRequest) (*GetResponse, error)
-	// ── key.put ──────────────────────────────────────────────────────────────
+	// key.put — marks refresh_after_mutation so the key list is re-fetched
+	// after every successful write.
 	Put(context.Context, *PutRequest) (*PutResponse, error)
-	// ── key.watch ────────────────────────────────────────────────────────────
+	// key.watch
 	Watch(*WatchRequest, grpc.ServerStreamingServer[WatchResponse]) error
 	mustEmbedUnimplementedKVServiceServer()
 }
