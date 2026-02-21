@@ -398,6 +398,254 @@ func (x *WatchResponse) GetTimestamp() int64 {
 	return 0
 }
 
+type SearchResult struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Key           string                 `protobuf:"bytes,1,opt,name=key,proto3" json:"key,omitempty"`
+	Value         string                 `protobuf:"bytes,2,opt,name=value,proto3" json:"value,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SearchResult) Reset() {
+	*x = SearchResult{}
+	mi := &file_v1_kv_kv_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SearchResult) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SearchResult) ProtoMessage() {}
+
+func (x *SearchResult) ProtoReflect() protoreflect.Message {
+	mi := &file_v1_kv_kv_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SearchResult.ProtoReflect.Descriptor instead.
+func (*SearchResult) Descriptor() ([]byte, []int) {
+	return file_v1_kv_kv_proto_rawDescGZIP(), []int{8}
+}
+
+func (x *SearchResult) GetKey() string {
+	if x != nil {
+		return x.Key
+	}
+	return ""
+}
+
+func (x *SearchResult) GetValue() string {
+	if x != nil {
+		return x.Value
+	}
+	return ""
+}
+
+type SearchRegexRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// RE2 regular expression matched against stored values.
+	Pattern string `protobuf:"bytes,1,opt,name=pattern,proto3" json:"pattern,omitempty"`
+	// Maximum results to return; 0 = no limit.
+	Limit         int32 `protobuf:"varint,2,opt,name=limit,proto3" json:"limit,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SearchRegexRequest) Reset() {
+	*x = SearchRegexRequest{}
+	mi := &file_v1_kv_kv_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SearchRegexRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SearchRegexRequest) ProtoMessage() {}
+
+func (x *SearchRegexRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_v1_kv_kv_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SearchRegexRequest.ProtoReflect.Descriptor instead.
+func (*SearchRegexRequest) Descriptor() ([]byte, []int) {
+	return file_v1_kv_kv_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *SearchRegexRequest) GetPattern() string {
+	if x != nil {
+		return x.Pattern
+	}
+	return ""
+}
+
+func (x *SearchRegexRequest) GetLimit() int32 {
+	if x != nil {
+		return x.Limit
+	}
+	return 0
+}
+
+type SearchRegexResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Results       []*SearchResult        `protobuf:"bytes,1,rep,name=results,proto3" json:"results,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SearchRegexResponse) Reset() {
+	*x = SearchRegexResponse{}
+	mi := &file_v1_kv_kv_proto_msgTypes[10]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SearchRegexResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SearchRegexResponse) ProtoMessage() {}
+
+func (x *SearchRegexResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_v1_kv_kv_proto_msgTypes[10]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SearchRegexResponse.ProtoReflect.Descriptor instead.
+func (*SearchRegexResponse) Descriptor() ([]byte, []int) {
+	return file_v1_kv_kv_proto_rawDescGZIP(), []int{10}
+}
+
+func (x *SearchRegexResponse) GetResults() []*SearchResult {
+	if x != nil {
+		return x.Results
+	}
+	return nil
+}
+
+type SearchExactRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Exact key name to search for.
+	Key string `protobuf:"bytes,1,opt,name=key,proto3" json:"key,omitempty"`
+	// Maximum results to return; 0 = no limit.
+	Limit         int32 `protobuf:"varint,2,opt,name=limit,proto3" json:"limit,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SearchExactRequest) Reset() {
+	*x = SearchExactRequest{}
+	mi := &file_v1_kv_kv_proto_msgTypes[11]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SearchExactRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SearchExactRequest) ProtoMessage() {}
+
+func (x *SearchExactRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_v1_kv_kv_proto_msgTypes[11]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SearchExactRequest.ProtoReflect.Descriptor instead.
+func (*SearchExactRequest) Descriptor() ([]byte, []int) {
+	return file_v1_kv_kv_proto_rawDescGZIP(), []int{11}
+}
+
+func (x *SearchExactRequest) GetKey() string {
+	if x != nil {
+		return x.Key
+	}
+	return ""
+}
+
+func (x *SearchExactRequest) GetLimit() int32 {
+	if x != nil {
+		return x.Limit
+	}
+	return 0
+}
+
+type SearchExactResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Results       []*SearchResult        `protobuf:"bytes,1,rep,name=results,proto3" json:"results,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SearchExactResponse) Reset() {
+	*x = SearchExactResponse{}
+	mi := &file_v1_kv_kv_proto_msgTypes[12]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SearchExactResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SearchExactResponse) ProtoMessage() {}
+
+func (x *SearchExactResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_v1_kv_kv_proto_msgTypes[12]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SearchExactResponse.ProtoReflect.Descriptor instead.
+func (*SearchExactResponse) Descriptor() ([]byte, []int) {
+	return file_v1_kv_kv_proto_rawDescGZIP(), []int{12}
+}
+
+func (x *SearchExactResponse) GetResults() []*SearchResult {
+	if x != nil {
+		return x.Results
+	}
+	return nil
+}
+
 var File_v1_kv_kv_proto protoreflect.FileDescriptor
 
 const file_v1_kv_kv_proto_rawDesc = "" +
@@ -428,7 +676,22 @@ const file_v1_kv_kv_proto_rawDesc = "" +
 	"\x04userR\x06userId\x12*\n" +
 	"\ttimestamp\x18\x04 \x01(\x03B\f\xb2\xbb\x18\b\n" +
 	"\x04time\x18\x01R\ttimestamp:(\xaa\xbb\x18$\n" +
-	"\"\b\x04\x12\ttimestamp\x12\x03key\x12\x05value\x12\auser_id2\xd0\x04\n" +
+	"\"\b\x04\x12\ttimestamp\x12\x03key\x12\x05value\x12\auser_id\"6\n" +
+	"\fSearchResult\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value\"D\n" +
+	"\x12SearchRegexRequest\x12\x18\n" +
+	"\apattern\x18\x01 \x01(\tR\apattern\x12\x14\n" +
+	"\x05limit\x18\x02 \x01(\x05R\x05limit\"Z\n" +
+	"\x13SearchRegexResponse\x12-\n" +
+	"\aresults\x18\x01 \x03(\v2\x13.kv.v1.SearchResultR\aresults:\x14\xaa\xbb\x18\x10\n" +
+	"\x0e\b\x01\x12\x03key\x12\x05value\"<\n" +
+	"\x12SearchExactRequest\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
+	"\x05limit\x18\x02 \x01(\x05R\x05limit\"Z\n" +
+	"\x13SearchExactResponse\x12-\n" +
+	"\aresults\x18\x01 \x03(\v2\x13.kv.v1.SearchResultR\aresults:\x14\xaa\xbb\x18\x10\n" +
+	"\x0e\b\x01\x12\x03key\x12\x05value2\x98\a\n" +
 	"\tKVService\x12K\n" +
 	"\bListKeys\x12\x16.kv.v1.ListKeysRequest\x1a\x17.kv.v1.ListKeysResponse\"\x0e\x80\xb5\x18\x01\xa2\xbb\x18\x06*\x02\b\x050\x01\x12\x89\x01\n" +
 	"\x03Get\x12\x11.kv.v1.GetRequest\x1a\x12.kv.v1.GetResponse\"[\x80\xb5\x18\x01\xa2\xbb\x18S\n" +
@@ -439,7 +702,11 @@ const file_v1_kv_kv_proto_rawDesc = "" +
 	"\x03key\x12\x18kv.v1.KVService.ListKeys\x1a\x04keys(\x01*\x17\b\x05*\x13✔ {key} = {value}8\x01\x12\xc1\x01\n" +
 	"\x05Watch\x12\x13.kv.v1.WatchRequest\x1a\x14.kv.v1.WatchResponse\"\x8a\x01\x80\xb5\x18\x05\xa2\xbb\x18\x81\x01\n" +
 	"\tkey.watch\x12\x1dStream live updates for a key\x1a\x05watch\"%\n" +
-	"\x03key\x12\x18kv.v1.KVService.ListKeys\x1a\x04keys*'\b\x04\x12\x03key\x12\x05value\x12\auser_id\x12\ttimestamp\x1a\x03─0\x01B\x1eZ\x1ckvservice/pkg/gen/v1/kv;kvv1b\x06proto3"
+	"\x03key\x12\x18kv.v1.KVService.ListKeys\x1a\x04keys*'\b\x04\x12\x03key\x12\x05value\x12\auser_id\x12\ttimestamp\x1a\x03─0\x01\x12\xa0\x01\n" +
+	"\vSearchRegex\x12\x19.kv.v1.SearchRegexRequest\x1a\x1a.kv.v1.SearchRegexResponse\"Z\x80\xb5\x18\x01\xa2\xbb\x18R\n" +
+	"\x10key.search.regex\x12'Search values by RE2 regular expression\x1a\x05regex*\x0e\b\x01\x12\x03key\x12\x05value\x12\xa2\x01\n" +
+	"\vSearchExact\x12\x19.kv.v1.SearchExactRequest\x1a\x1a.kv.v1.SearchExactResponse\"\\\x80\xb5\x18\x01\xa2\xbb\x18T\n" +
+	"\x10key.search.exact\x12)Search for keys with an exact value match\x1a\x05exact*\x0e\b\x01\x12\x03key\x12\x05valueB\x1eZ\x1ckvservice/pkg/gen/v1/kv;kvv1b\x06proto3"
 
 var (
 	file_v1_kv_kv_proto_rawDescOnce sync.Once
@@ -453,31 +720,42 @@ func file_v1_kv_kv_proto_rawDescGZIP() []byte {
 	return file_v1_kv_kv_proto_rawDescData
 }
 
-var file_v1_kv_kv_proto_msgTypes = make([]protoimpl.MessageInfo, 8)
+var file_v1_kv_kv_proto_msgTypes = make([]protoimpl.MessageInfo, 13)
 var file_v1_kv_kv_proto_goTypes = []any{
-	(*ListKeysRequest)(nil),  // 0: kv.v1.ListKeysRequest
-	(*ListKeysResponse)(nil), // 1: kv.v1.ListKeysResponse
-	(*GetRequest)(nil),       // 2: kv.v1.GetRequest
-	(*GetResponse)(nil),      // 3: kv.v1.GetResponse
-	(*PutRequest)(nil),       // 4: kv.v1.PutRequest
-	(*PutResponse)(nil),      // 5: kv.v1.PutResponse
-	(*WatchRequest)(nil),     // 6: kv.v1.WatchRequest
-	(*WatchResponse)(nil),    // 7: kv.v1.WatchResponse
+	(*ListKeysRequest)(nil),     // 0: kv.v1.ListKeysRequest
+	(*ListKeysResponse)(nil),    // 1: kv.v1.ListKeysResponse
+	(*GetRequest)(nil),          // 2: kv.v1.GetRequest
+	(*GetResponse)(nil),         // 3: kv.v1.GetResponse
+	(*PutRequest)(nil),          // 4: kv.v1.PutRequest
+	(*PutResponse)(nil),         // 5: kv.v1.PutResponse
+	(*WatchRequest)(nil),        // 6: kv.v1.WatchRequest
+	(*WatchResponse)(nil),       // 7: kv.v1.WatchResponse
+	(*SearchResult)(nil),        // 8: kv.v1.SearchResult
+	(*SearchRegexRequest)(nil),  // 9: kv.v1.SearchRegexRequest
+	(*SearchRegexResponse)(nil), // 10: kv.v1.SearchRegexResponse
+	(*SearchExactRequest)(nil),  // 11: kv.v1.SearchExactRequest
+	(*SearchExactResponse)(nil), // 12: kv.v1.SearchExactResponse
 }
 var file_v1_kv_kv_proto_depIdxs = []int32{
-	0, // 0: kv.v1.KVService.ListKeys:input_type -> kv.v1.ListKeysRequest
-	2, // 1: kv.v1.KVService.Get:input_type -> kv.v1.GetRequest
-	4, // 2: kv.v1.KVService.Put:input_type -> kv.v1.PutRequest
-	6, // 3: kv.v1.KVService.Watch:input_type -> kv.v1.WatchRequest
-	1, // 4: kv.v1.KVService.ListKeys:output_type -> kv.v1.ListKeysResponse
-	3, // 5: kv.v1.KVService.Get:output_type -> kv.v1.GetResponse
-	5, // 6: kv.v1.KVService.Put:output_type -> kv.v1.PutResponse
-	7, // 7: kv.v1.KVService.Watch:output_type -> kv.v1.WatchResponse
-	4, // [4:8] is the sub-list for method output_type
-	0, // [0:4] is the sub-list for method input_type
-	0, // [0:0] is the sub-list for extension type_name
-	0, // [0:0] is the sub-list for extension extendee
-	0, // [0:0] is the sub-list for field type_name
+	8,  // 0: kv.v1.SearchRegexResponse.results:type_name -> kv.v1.SearchResult
+	8,  // 1: kv.v1.SearchExactResponse.results:type_name -> kv.v1.SearchResult
+	0,  // 2: kv.v1.KVService.ListKeys:input_type -> kv.v1.ListKeysRequest
+	2,  // 3: kv.v1.KVService.Get:input_type -> kv.v1.GetRequest
+	4,  // 4: kv.v1.KVService.Put:input_type -> kv.v1.PutRequest
+	6,  // 5: kv.v1.KVService.Watch:input_type -> kv.v1.WatchRequest
+	9,  // 6: kv.v1.KVService.SearchRegex:input_type -> kv.v1.SearchRegexRequest
+	11, // 7: kv.v1.KVService.SearchExact:input_type -> kv.v1.SearchExactRequest
+	1,  // 8: kv.v1.KVService.ListKeys:output_type -> kv.v1.ListKeysResponse
+	3,  // 9: kv.v1.KVService.Get:output_type -> kv.v1.GetResponse
+	5,  // 10: kv.v1.KVService.Put:output_type -> kv.v1.PutResponse
+	7,  // 11: kv.v1.KVService.Watch:output_type -> kv.v1.WatchResponse
+	10, // 12: kv.v1.KVService.SearchRegex:output_type -> kv.v1.SearchRegexResponse
+	12, // 13: kv.v1.KVService.SearchExact:output_type -> kv.v1.SearchExactResponse
+	8,  // [8:14] is the sub-list for method output_type
+	2,  // [2:8] is the sub-list for method input_type
+	2,  // [2:2] is the sub-list for extension type_name
+	2,  // [2:2] is the sub-list for extension extendee
+	0,  // [0:2] is the sub-list for field type_name
 }
 
 func init() { file_v1_kv_kv_proto_init() }
@@ -491,7 +769,7 @@ func file_v1_kv_kv_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_v1_kv_kv_proto_rawDesc), len(file_v1_kv_kv_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   8,
+			NumMessages:   13,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

@@ -1,0 +1,165 @@
+syntax = "proto3";
+package user.v1;
+
+option go_package = "kvservice/pkg/gen/v1/user;userv1";
+
+import "v1/options/options.proto";
+import "v1/options/repl.proto";
+
+// ─────────────────────────────────────────────────────────────────────────────
+// UserService
+//
+// Demonstrates:
+//   • display_fields — multi-column completion dropdown (id, username, role, active)
+//   • show_headers   — column header row above candidates
+//   • column_separator — "  │  " between columns
+//   • value_field    — Tab inserts the user id, not the whole row
+//   • column_width   — fixed widths keep columns aligned
+//   • CELL_BOOL_ICON — active flag renders ✔/✘ in the dropdown
+//   • filters: eq    — user.get.active shows only active=true users
+//   • filters: in_set — user.promote shows only non-admin users
+// ─────────────────────────────────────────────────────────────────────────────
+
+service UserService {
+
+  // ── Bootstrap ─────────────────────────────────────────────────────────────
+  // Called on connect. Populates the shared user completion cache so every
+  // command that accepts --user_id gets the same rich dropdown immediately.
+  rpc ListUsers(ListUsersRequest) returns (ListUsersResponse) {
+    option (repl.v1.method_opts) = {
+      bootstrap: true
+      display:   { mode: DISPLAY_SILENT }
+    };
+    option (options.v1.required_action) = ACTION_GET;
+  }
+
+  // ── user.get ───────────────────────────────────────────────────────────────
+  // Fetch full profile for any user.
+  // Completion dropdown: id │ username │ role │ active
+  rpc GetUser(GetUserRequest) returns (GetUserResponse) {
+    option (repl.v1.method_opts) = {
+      cmd:         "user.get"
+      description: "Fetch a user profile"
+      aliases:     ["whoami"]
+      completions: [{
+        field:        "user_id"
+        source_rpc:   "user.v1.UserService.ListUsers"
+        source_field: "users"
+        value_field:  "id"
+        show_headers: true
+        column_separator: "  │  "
+        display_fields: { path: "id"       label: "id"       width: 6  }
+        display_fields: { path: "username" label: "username" width: 16 }
+        display_fields:{ path: "role"     label: "role"     width: 10 }
+        display_fields:{ path: "active"   label: "✓"        width: 3 renderer: CELL_BOOL_ICON }
+      }]
+      display: { mode: DISPLAY_KV }
+    };
+    option (options.v1.required_action) = ACTION_GET;
+  }
+
+  // ── user.get.active ────────────────────────────────────────────────────────
+  // Same as user.get but the completion source is filtered to active users only.
+  // Demonstrates: filters eq — client-side, no extra RPC.
+  rpc GetActiveUser(GetUserRequest) returns (GetUserResponse) {
+    option (repl.v1.method_opts) = {
+      cmd:         "user.get.active"
+      description: "Fetch a user profile (active users only)"
+      completions: [{
+        field:        "user_id"
+        source_rpc:   "user.v1.UserService.ListUsers"
+        source_field: "users"
+        value_field:  "id"
+        show_headers: true
+        column_separator: "  │  "
+        display_fields:  { path: "id"       label: "id"       width: 6  }
+        display_fields:  { path: "username" label: "username" width: 16 }
+        display_fields:  { path: "role"     label: "role"     width: 10 }
+        filters: [{ field: "active"  eq: "true" }]   // only active=true rows
+      }]
+      display: { mode: DISPLAY_KV }
+    };
+    option (options.v1.required_action) = ACTION_GET;
+  }
+
+  // ── user.promote ───────────────────────────────────────────────────────────
+  // Promote a user to admin. Completion shows only non-admin users.
+  // Demonstrates: filters in_set (whitelist) on role field.
+  rpc PromoteUser(PromoteUserRequest) returns (PromoteUserResponse) {
+    option (repl.v1.method_opts) = {
+      cmd:                    "user.promote"
+      description:            "Promote a user to admin role"
+      refresh_after_mutation: true
+      completions: [{
+        field:        "user_id"
+        source_rpc:   "user.v1.UserService.ListUsers"
+        source_field: "users"
+        value_field:  "id"
+        show_headers: true
+        column_separator: "  │  "
+        display_fields: { path: "id"       label: "id"       width: 6  }
+        display_fields: { path: "username" label: "username" width: 16 }
+        display_fields: { path: "role"     label: "role"     width: 10 }
+        // Only show users whose role is editor or viewer — not already admin
+        filters: [{ field: "role"  in_set: { values: ["editor", "viewer"] } }]
+      }]
+      display: {
+        mode:            DISPLAY_SILENT
+        success_message: "✔ {username} promoted to admin"
+      }
+    };
+    option (options.v1.required_action) = ACTION_GET;
+  }
+
+  // ── user.list ──────────────────────────────────────────────────────────────
+  rpc ListUsersCmd(ListUsersRequest) returns (ListUsersResponse) {
+    option (repl.v1.method_opts) = {
+      cmd:         "user.list"
+      description: "List all users"
+      aliases:     ["users"]
+      display: {
+        mode:    DISPLAY_TABLE
+        columns: ["id", "username", "role", "active", "created_at"]
+      }
+    };
+    option (options.v1.required_action) = ACTION_GET;
+  }
+}
+
+// ── Messages ──────────────────────────────────────────────────────────────────
+
+// Used by bootstrap and completion source — returned list is projected into
+// the multi-column dropdown.
+message ListUsersRequest  {}
+message ListUsersResponse {
+  repeated User users = 1;
+}
+
+message GetUserRequest  { int32 user_id = 1; }
+message GetUserResponse {
+  option (repl.v1.message_opts) = { display: { mode: DISPLAY_KV } };
+  int32  id         = 1 [(repl.v1.field_opts) = { label: "id"         column_width: 6  }];
+  string username   = 2 [(repl.v1.field_opts) = { label: "username"   column_width: 16 }];
+  string email      = 3 [(repl.v1.field_opts) = { label: "email"      column_width: 24 }];
+  string role       = 4 [(repl.v1.field_opts) = { label: "role"       column_width: 10 }];
+  bool   active     = 5 [(repl.v1.field_opts) = { label: "active"     renderer: CELL_BOOL_ICON }];
+  int64  created_at = 6 [(repl.v1.field_opts) = { label: "created"    renderer: CELL_TIMESTAMP }];
+  int64  updated_at = 7 [(repl.v1.field_opts) = { label: "updated"    renderer: CELL_TIMESTAMP }];
+}
+
+message PromoteUserRequest  { int32 user_id = 1; }
+message PromoteUserResponse {
+  bool   success  = 1 [(repl.v1.field_opts) = { renderer: CELL_BOOL_ICON }];
+  string username = 2;
+}
+
+// User sub-message — stored in the ListUsersResponse repeated field and used
+// by the completion projection engine to build the dropdown columns.
+message User {
+  int32  id         = 1;
+  string username   = 2;
+  string email      = 3;
+  string role       = 4; // "admin" | "editor" | "viewer"
+  bool   active     = 5;
+  int64  created_at = 6;
+}

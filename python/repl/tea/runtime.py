@@ -78,7 +78,6 @@ class ReplRuntime:
         self,
         client: Any,
         server: str,
-        auth_header: Optional[str] = None,
         initial_service: Optional[str] = None,
     ) -> None:
         self._client = client
@@ -93,7 +92,6 @@ class ReplRuntime:
         self._model = initial_model(
             server=server,
             ui_spec=ui_spec,
-            auth_header=auth_header,
         )
 
         # Give the completer a live view of the namespace via a lambda so it
@@ -172,7 +170,6 @@ class ReplRuntime:
                 result = self._client.invoke_rpc(
                     f"{node.service}/{node.method}",
                     "{}",
-                    self._model.auth_header,
                 )
                 # Build the FQN that other commands would reference as source_rpc
                 # e.g.  "kv.v1.KVService/ListKeys" → "kv.v1.KVService.ListKeys"
@@ -292,11 +289,9 @@ class ReplRuntime:
             self._invoke_reflection(cmd)
             return
         try:
-            auth = self._auth_header()
             result = self._client.invoke_rpc(
                 f"{cmd.service}/{cmd.method}",
                 json.dumps(cmd.request),
-                auth,
             )
             self._dispatch(RpcSuccess(cmd_path=cmd.cmd_path, result=result))
         except grpc.RpcError as e:
@@ -340,7 +335,6 @@ class ReplRuntime:
         node = self._model.ui_spec.find_cmd(cmd.cmd_path)
 
         def _run() -> None:
-            auth = self._auth_header()
             count = 0
             with patch_stdout():
                 print(f"\n  📡  Streaming  (Ctrl-C to stop)\n")
@@ -352,7 +346,6 @@ class ReplRuntime:
                 for chunk in self._client.invoke_rpc_streaming(
                     f"{cmd.service}/{cmd.method}",
                     json.dumps(cmd.request),
-                    auth,
                 ):
                     if self._stream_cancel.is_set():
                         break
@@ -390,7 +383,6 @@ class ReplRuntime:
             result = self._client.invoke_rpc(
                 f"{svc}/{method}",
                 req_json,
-                self._model.auth_header,
             )
             self._fill_cache_from_result(cs, result)
         except Exception:
@@ -472,17 +464,6 @@ class ReplRuntime:
     # ──────────────────────────────────────────────────────────────────────
     # Helpers
     # ──────────────────────────────────────────────────────────────────────
-
-    def _auth_header(self) -> Optional[str]:
-        return next(
-            (
-                v
-                for k, v in self._model.headers_dict().items()
-                if k.lower() == "authorization"
-            ),
-            self._model.auth_header,
-        )
-
     def _bottom_toolbar(self) -> FormattedText:
         if self._model.stream_active:
             return FormattedText(

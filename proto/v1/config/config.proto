@@ -1,0 +1,196 @@
+syntax = "proto3";
+package config.v1;
+
+option go_package = "kvservice/pkg/gen/v1/config;configv1";
+
+import "v1/options/options.proto";
+import "v1/options/repl.proto";
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ConfigService — environment-scoped configuration store
+//
+// Demonstrates:
+//   • source_request + ${VAR}  — completion RPC receives the current $ENV
+//                                so --key dropdown only shows keys for that env
+//   • live: true               — key list re-fetched on every Tab (env changes)
+//   • DISPLAY_JSON             — config.dump shows pretty-printed JSON block
+//   • DISPLAY_RAW              — config.export emits compact single-line JSON
+//   • title_field              — config.get uses "env" as a section title
+//   • CELL_JSON                — "value" field renders compact JSON inline
+//   • filters: present         — config.set completion hides keys with no value
+// ─────────────────────────────────────────────────────────────────────────────
+
+service ConfigService {
+
+  // ── Bootstrap ─────────────────────────────────────────────────────────────
+  // Seed the env list. $ENV is not set yet at bootstrap time, so we just
+  // fetch all environment names for the --env dropdown on every command.
+  rpc ListEnvs(ListEnvsRequest) returns (ListEnvsResponse) {
+    option (repl.v1.method_opts) = {
+      bootstrap: true
+      display:   { mode: DISPLAY_SILENT }
+    };
+    option (options.v1.required_action) = ACTION_GET;
+  }
+
+  // ── config.get ────────────────────────────────────────────────────────────
+  // Fetch one config entry.
+  //
+  // --env   completion comes from the bootstrap-seeded env list.
+  // --key   completion is LIVE and parameterised: source_request sends the
+  //         current value of $ENV so the dropdown shows only keys that exist
+  //         in the selected environment.
+  //
+  //         e.g. after  `set ENV prod`
+  //              --key <TAB>  fetches  ListKeys({"env": "prod"})
+  //
+  // title_field: "env"  renders the env name as a section header above the KV
+  // output, so the screen reads:
+  //
+  //   prod
+  //   ────────────────────────
+  //   key    database.url
+  //   value  postgres://prod-db:5432/app
+  rpc GetConfig(GetConfigRequest) returns (GetConfigResponse) {
+    option (repl.v1.method_opts) = {
+      cmd:         "config.get"
+      description: "Fetch one config entry"
+      aliases:     ["cfg"]
+      completions: [
+        {
+          field:        "env"
+          source_rpc:   "config.v1.ConfigService.ListEnvs"
+          source_field: "envs"
+        },
+        {
+          field:          "key"
+          source_rpc:     "config.v1.ConfigService.ListKeys"
+          source_field:   "keys"
+          // source_request is a JSON template: ${ENV} is expanded at fetch time
+          // using the REPL variable store.  The key dropdown therefore only
+          // contains keys that exist in the currently active environment.
+          source_request: "{\"env\": \"${ENV}\"}"
+          live: true   // re-fetch when ENV changes or user tabs again
+        }
+      ]
+      display: {
+        mode:       DISPLAY_KV
+        title_field: "env"     // renders env name as section header
+      }
+    };
+    option (options.v1.required_action) = ACTION_GET;
+  }
+
+  // ── config.set ────────────────────────────────────────────────────────────
+  // Write a config entry.
+  //
+  // --key completion uses filters: present to only show keys that already
+  // have a value — i.e., keys that *exist* in the env.  Brand-new keys the
+  // user types manually.
+  rpc SetConfig(SetConfigRequest) returns (SetConfigResponse) {
+    option (repl.v1.method_opts) = {
+      cmd:                    "config.set"
+      description:            "Write a config entry"
+      refresh_after_mutation: true
+      completions: [
+        {
+          field:        "env"
+          source_rpc:   "config.v1.ConfigService.ListEnvs"
+          source_field: "envs"
+        },
+        {
+          field:          "key"
+          source_rpc:     "config.v1.ConfigService.ListKeys"
+          source_field:   "keys"
+          source_request: "{\"env\": \"${ENV}\"}"
+          live: true
+          // present filter: only show keys that have a non-empty current value.
+          // This excludes tombstoned/placeholder entries, keeping the dropdown clean.
+          filters: [{ field: "value"  present: true }]
+        }
+      ]
+      display: {
+        mode:            DISPLAY_SILENT
+        success_message: "✔ [{env}] {key} = {value}"
+      }
+    };
+    option (options.v1.required_action) = ACTION_GET;
+  }
+
+  // ── config.dump ───────────────────────────────────────────────────────────
+  // Return all entries for an env as a structured block.
+  // DISPLAY_JSON renders the entire response as indented JSON — useful when
+  // you want to copy-paste the config wholesale.
+  rpc DumpConfig(DumpConfigRequest) returns (DumpConfigResponse) {
+    option (repl.v1.method_opts) = {
+      cmd:         "config.dump"
+      description: "Dump all config for an environment as JSON"
+      completions: [{
+        field:        "env"
+        source_rpc:   "config.v1.ConfigService.ListEnvs"
+        source_field: "envs"
+      }]
+      display: { mode: DISPLAY_JSON }   // pretty-printed JSON block
+    };
+    option (options.v1.required_action) = ACTION_GET;
+  }
+
+  // ── config.export ─────────────────────────────────────────────────────────
+  // Compact single-line JSON — suitable for piping to jq or storing in a file.
+  rpc ExportConfig(DumpConfigRequest) returns (DumpConfigResponse) {
+    option (repl.v1.method_opts) = {
+      cmd:         "config.export"
+      description: "Export config as compact JSON (pipe-friendly)"
+      completions: [{
+        field:        "env"
+        source_rpc:   "config.v1.ConfigService.ListEnvs"
+        source_field: "envs"
+      }]
+      display: { mode: DISPLAY_RAW }   // compact, no whitespace
+    };
+    option (options.v1.required_action) = ACTION_GET;
+  }
+
+  // Internal key-list RPC — used as completion source, never shown as a command.
+  rpc ListKeys(ListKeysRequest) returns (ListKeysResponse) {
+    option (repl.v1.method_opts) = {
+      display: { mode: DISPLAY_SILENT }
+      // No cmd: — invisible to the user but usable as source_rpc
+    };
+    option (options.v1.required_action) = ACTION_GET;
+  }
+}
+
+// ── Messages ──────────────────────────────────────────────────────────────────
+
+message ListEnvsRequest  {}
+message ListEnvsResponse { repeated string envs = 1; }
+
+message ListKeysRequest  { string env = 1; }
+message ListKeysResponse {
+  // repeated ConfigEntry so the "present" filter can inspect the value field
+  repeated ConfigEntry keys = 1;
+}
+
+message GetConfigRequest  { string env = 1; string key = 2; }
+message GetConfigResponse {
+  string env   = 1 [(repl.v1.field_opts) = { label: "env"   hidden: true  }];
+  string key   = 2 [(repl.v1.field_opts) = { label: "key"   column_width: 24 }];
+  // value is stored as a JSON string to support arbitrary structured data.
+  // CELL_JSON renders it inline in the KV view without escaping.
+  string value = 3 [(repl.v1.field_opts) = { label: "value" renderer: CELL_JSON }];
+}
+
+message SetConfigRequest  { string env = 1; string key = 2; string value = 3; }
+message SetConfigResponse { bool success = 1; }
+
+message DumpConfigRequest { string env = 1; }
+message DumpConfigResponse {
+  string                    env     = 1;
+  map<string, string>       entries = 2;
+}
+
+message ConfigEntry {
+  string key   = 1;
+  string value = 2; // present filter checks this field
+}

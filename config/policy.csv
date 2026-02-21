@@ -1,8 +1,11 @@
 p, admin, kv, get
-p, admin, kv, watch
 p, admin, kv, put
+p, admin, kv, delete
+p, admin, kv, watch
+p, admin, kv, reflect
 p, reader, kv, get
 p, reader, kv, watch
+p, reader, kv, reflect
 g, alice, admin
 g, bob, reader
 g, charlie, reader

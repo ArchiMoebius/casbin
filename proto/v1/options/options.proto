@@ -8,7 +8,7 @@ import "google/protobuf/descriptor.proto";
 // Action enum — every value must be listed here or the server will log
 // "unknown or unspecified Action enum value" and skip the method.
 enum Action {
-  ACTION_UNSPECIFIED = 0;
+  ACTION_REFLECT     = 0;
   ACTION_GET         = 1;
   ACTION_PUT         = 2;
   ACTION_DELETE      = 3;

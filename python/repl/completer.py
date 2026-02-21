@@ -89,6 +89,18 @@ class ReplCompleter(Completer):
             yield from self._complete_cmd_path(words[0] if words else "")
             return
 
+        # ── Meta-command argument completion ────────────────────────────────────
+        if words[0] == "use":
+            partial = (
+                words[1]
+                if len(words) == 2 and not after_space
+                else ""
+                if after_space
+                else ""
+            )
+            yield from self._complete_use_arg(partial)
+            return
+
         # ── Resolve node (namespace-aware) ────────────────────────────────────
         node = self._resolve_node(words[0])
         if node is None:
@@ -277,7 +289,73 @@ class ReplCompleter(Completer):
         # Meta-commands (use, help, exit, back, …)
         yield from self._complete_meta(partial, seen)
 
-    # ── Meta-command completion ──────────────────────────────────────────────
+    # ── use <arg> completion ─────────────────────────────────────────────────
+
+    def _complete_use_arg(self, partial: str) -> Iterator[Completion]:
+        """
+        Complete the argument to `use`, yielding only *namespace segments*
+        (dot-path prefixes that have at least one sub-command beneath them).
+        Bare leaf commands (key.get) are not valid `use` targets.
+
+        With namespace ("key",) active and partial "":
+          Scans commands starting with "key."
+          "key.get"          → next_seg="get"   → full_path="key.get"
+                                no commands under "key.get." → skip (leaf)
+          "key.search.regex" → next_seg="search" → "key.search.*" → 2 cmds → yield
+          "key.search.fuzzy" → next_seg="search" → already seen → skip
+
+        With no namespace and partial "":
+          "key.get" → next_seg="key" → "key.*" → 4 cmds → yield
+          "services"→ next_seg="services" → "services.*" → 0 → skip (leaf)
+        """
+        active = self._active_prefix()  # e.g. "key" or ""
+        scan_prefix = (active + ".") if active else ""
+        seen: set[str] = set()
+
+        for cmd, node in self._spec.commands.items():
+            if node.bootstrap:
+                continue
+            # Command must sit under the active namespace
+            if scan_prefix and not cmd.startswith(scan_prefix):
+                continue
+            # Strip namespace prefix to get the relative path
+            rel = cmd[len(scan_prefix) :]  # e.g. "get", "search.regex"
+            # Filter by what the user has typed so far
+            if not rel.startswith(partial):
+                continue
+            # Extract the next segment after partial
+            after = rel[len(partial) :]  # e.g. "", ".regex", "earch.regex"
+            seg = after.split(".")[0]  # first sub-segment
+            insert = partial + seg  # full segment (may include partial)
+            if not seg or insert in seen:
+                continue
+            # Only yield if this segment is a *namespace* — i.e. there is at
+            # least one command whose path continues past this segment.
+            full_path = scan_prefix + insert
+            has_children = any(
+                c.startswith(full_path + ".") and not self._spec.commands[c].bootstrap
+                for c in self._spec.commands
+            )
+            if not has_children:
+                continue  # leaf — not a valid `use` target
+            seen.add(insert)
+
+            # Count sub-commands for display_meta
+            sub_count = sum(
+                1
+                for c in self._spec.commands
+                if c.startswith(full_path + ".")
+                and not self._spec.commands[c].bootstrap
+            )
+            meta = f"{sub_count} command{'s' if sub_count != 1 else ''}"
+            yield Completion(
+                text=seg,  # only the suffix after what's typed
+                start_position=0,
+                display=FormattedText([("class:completion-cmd", insert)]),
+                display_meta=meta,
+            )
+
+        # ── Meta-command completion ──────────────────────────────────────────────
 
     def _complete_meta(self, partial: str, seen: set[str]) -> Iterator[Completion]:
         """

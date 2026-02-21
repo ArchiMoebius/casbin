@@ -67,7 +67,6 @@ class Model:
     mode: ReplMode
     wizard_state: Optional[WizardState]
     stream_active: bool
-    auth_header: Optional[str]
 
     # ── Derived helpers ──────────────────────────────────────────────────────
 
@@ -125,7 +124,6 @@ class Model:
 def initial_model(
     server: str,
     ui_spec: UISpec,
-    auth_header: Optional[str] = None,
 ) -> Model:
     return Model(
         server=server,
@@ -140,5 +138,4 @@ def initial_model(
         mode=ReplMode.NORMAL,
         wizard_state=None,
         stream_active=False,
-        auth_header=auth_header,
     )

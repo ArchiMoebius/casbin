@@ -8,8 +8,7 @@ import "v1/options/repl.proto";
 
 service KVService {
 
-  // Bootstrap: populate key completion cache on connect.
-  // No cmd — never shown as a user command.
+  // ── Bootstrap ─────────────────────────────────────────────────────────────
   rpc ListKeys(ListKeysRequest) returns (ListKeysResponse) {
     option (repl.v1.method_opts) = {
       bootstrap: true
@@ -18,55 +17,38 @@ service KVService {
     option (options.v1.required_action) = ACTION_GET;
   }
 
-  // key.get
+  // ── key.get ───────────────────────────────────────────────────────────────
   rpc Get(GetRequest) returns (GetResponse) {
     option (repl.v1.method_opts) = {
       cmd:         "key.get"
       description: "Fetch the value of a key"
       aliases:     ["get"]
-      completions: [{
-        field:        "key"
-        source_rpc:   "kv.v1.KVService.ListKeys"
-        source_field: "keys"
-      }]
+      completions: [{ field: "key"  source_rpc: "kv.v1.KVService.ListKeys"  source_field: "keys" }]
       display: { mode: DISPLAY_KV }
     };
     option (options.v1.required_action) = ACTION_GET;
   }
 
-  // key.put — marks refresh_after_mutation so the key list is re-fetched
-  // after every successful write.
+  // ── key.put ───────────────────────────────────────────────────────────────
   rpc Put(PutRequest) returns (PutResponse) {
     option (repl.v1.method_opts) = {
       cmd:                    "key.put"
       description:            "Write a value to a key"
       aliases:                ["put", "set"]
       refresh_after_mutation: true
-      completions: [{
-        field:        "key"
-        source_rpc:   "kv.v1.KVService.ListKeys"
-        source_field: "keys"
-        live:         true
-      }]
-      display: {
-        mode:            DISPLAY_SILENT
-        success_message: "✔ {key} = {value}"
-      }
+      completions: [{ field: "key"  source_rpc: "kv.v1.KVService.ListKeys"  source_field: "keys"  live: true }]
+      display: { mode: DISPLAY_SILENT  success_message: "✔ {key} = {value}" }
     };
     option (options.v1.required_action) = ACTION_PUT;
   }
 
-  // key.watch
+  // ── key.watch ─────────────────────────────────────────────────────────────
   rpc Watch(WatchRequest) returns (stream WatchResponse) {
     option (repl.v1.method_opts) = {
       cmd:         "key.watch"
       description: "Stream live updates for a key"
       aliases:     ["watch"]
-      completions: [{
-        field:        "key"
-        source_rpc:   "kv.v1.KVService.ListKeys"
-        source_field: "keys"
-      }]
+      completions: [{ field: "key"  source_rpc: "kv.v1.KVService.ListKeys"  source_field: "keys" }]
       display: {
         mode:             DISPLAY_STREAM
         columns:          ["key", "value", "user_id", "timestamp"]
@@ -75,7 +57,39 @@ service KVService {
     };
     option (options.v1.required_action) = ACTION_WATCH;
   }
+
+  // ── key.search.regex ──────────────────────────────────────────────────────
+  // Returns every key whose NAME matches a RE2 regular expression.
+  rpc SearchRegex(SearchRegexRequest) returns (SearchRegexResponse) {
+    option (repl.v1.method_opts) = {
+      cmd:         "key.search.regex"
+      description: "Search values by RE2 regular expression"
+      aliases:     ["regex"]
+      display: {
+        mode:    DISPLAY_TABLE
+        columns: ["key", "value"]
+      }
+    };
+    option (options.v1.required_action) = ACTION_GET;
+  }
+
+  // ── key.search.exact ──────────────────────────────────────────────────────
+  // Returns every key whose NAME exactly equals the given string.
+  rpc SearchExact(SearchExactRequest) returns (SearchExactResponse) {
+    option (repl.v1.method_opts) = {
+      cmd:         "key.search.exact"
+      description: "Search for keys with an exact value match"
+      aliases:     ["exact"]
+      display: {
+        mode:    DISPLAY_TABLE
+        columns: ["key", "value"]
+      }
+    };
+    option (options.v1.required_action) = ACTION_GET;
+  }
 }
+
+// ── Messages ──────────────────────────────────────────────────────────────────
 
 message ListKeysRequest  {}
 message ListKeysResponse { repeated string keys = 1; }
@@ -100,4 +114,35 @@ message WatchResponse {
   string value     = 2;
   string user_id   = 3 [(repl.v1.field_opts) = { label: "user" }];
   int64  timestamp = 4 [(repl.v1.field_opts) = { label: "time"  renderer: CELL_TIMESTAMP }];
+}
+
+message SearchResult {
+  string key   = 1;
+  string value = 2;
+}
+
+message SearchRegexRequest {
+  // RE2 regular expression matched against stored values.
+  string pattern = 1;
+  // Maximum results to return; 0 = no limit.
+  int32  limit   = 2;
+}
+message SearchRegexResponse {
+  option (repl.v1.message_opts) = {
+    display: { mode: DISPLAY_TABLE  columns: ["key","value"] }
+  };
+  repeated SearchResult results = 1;
+}
+
+message SearchExactRequest {
+  // Exact key name to search for.
+  string key   = 1;
+  // Maximum results to return; 0 = no limit.
+  int32  limit = 2;
+}
+message SearchExactResponse {
+  option (repl.v1.message_opts) = {
+    display: { mode: DISPLAY_TABLE  columns: ["key","value"] }
+  };
+  repeated SearchResult results = 1;
 }

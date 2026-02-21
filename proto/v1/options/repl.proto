@@ -47,11 +47,11 @@ message FieldCompletion {
   bool    live            = 5;
 
   // Projection (complex message completion)
-  string value_field                           = 6;
+  string value_field                             = 6;
   repeated CompletionDisplayField display_fields = 7;
-  repeated CompletionFilter filters            = 8;
-  bool    show_headers                         = 9;
-  string  column_separator                     = 10;
+  repeated CompletionFilter filters              = 8;
+  bool    show_headers                           = 9;
+  string  column_separator                       = 10;
 }
 
 message CompletionDisplayField {
@@ -79,12 +79,12 @@ message StringList { repeated string values = 1; }
 // Display
 // ─────────────────────────────────────────────────────
 message DisplaySpec {
-  DisplayMode     mode            = 1;
-  repeated string columns         = 2;
+  DisplayMode     mode             = 1;
+  repeated string columns          = 2;
   string          stream_separator = 3;
-  string          title_field     = 4;
-  string          success_message = 5;
-  bool            expand_nested   = 6;
+  string          title_field      = 4;
+  string          success_message  = 5;
+  bool            expand_nested    = 6;
 }
 
 enum DisplayMode {

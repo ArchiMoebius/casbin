@@ -20,10 +20,11 @@ Usage:
     python grpc_client.py --auth basic --user alice:password123 repl
 
     # REPL with pre-seeded service context
-    python grpc_client.py repl --service kv.v1.KVService
+    python grpc_client.py repl
 """
-from __future__ import annotations
 
+from __future__ import annotations
+import sys
 import argparse
 import base64
 import json
@@ -39,35 +40,96 @@ from google.protobuf.descriptor_pb2 import FieldDescriptorProto, FileDescriptorP
 from google.protobuf.json_format import MessageToDict, Parse
 
 FIELD_TYPE_NAMES = {
-    FieldDescriptorProto.TYPE_DOUBLE:   "double",
-    FieldDescriptorProto.TYPE_FLOAT:    "float",
-    FieldDescriptorProto.TYPE_INT64:    "int64",
-    FieldDescriptorProto.TYPE_UINT64:   "uint64",
-    FieldDescriptorProto.TYPE_INT32:    "int32",
-    FieldDescriptorProto.TYPE_FIXED64:  "fixed64",
-    FieldDescriptorProto.TYPE_FIXED32:  "fixed32",
-    FieldDescriptorProto.TYPE_BOOL:     "bool",
-    FieldDescriptorProto.TYPE_STRING:   "string",
-    FieldDescriptorProto.TYPE_GROUP:    "group",
-    FieldDescriptorProto.TYPE_MESSAGE:  "message",
-    FieldDescriptorProto.TYPE_BYTES:    "bytes",
-    FieldDescriptorProto.TYPE_UINT32:   "uint32",
-    FieldDescriptorProto.TYPE_ENUM:     "enum",
+    FieldDescriptorProto.TYPE_DOUBLE: "double",
+    FieldDescriptorProto.TYPE_FLOAT: "float",
+    FieldDescriptorProto.TYPE_INT64: "int64",
+    FieldDescriptorProto.TYPE_UINT64: "uint64",
+    FieldDescriptorProto.TYPE_INT32: "int32",
+    FieldDescriptorProto.TYPE_FIXED64: "fixed64",
+    FieldDescriptorProto.TYPE_FIXED32: "fixed32",
+    FieldDescriptorProto.TYPE_BOOL: "bool",
+    FieldDescriptorProto.TYPE_STRING: "string",
+    FieldDescriptorProto.TYPE_GROUP: "group",
+    FieldDescriptorProto.TYPE_MESSAGE: "message",
+    FieldDescriptorProto.TYPE_BYTES: "bytes",
+    FieldDescriptorProto.TYPE_UINT32: "uint32",
+    FieldDescriptorProto.TYPE_ENUM: "enum",
     FieldDescriptorProto.TYPE_SFIXED32: "sfixed32",
     FieldDescriptorProto.TYPE_SFIXED64: "sfixed64",
-    FieldDescriptorProto.TYPE_SINT32:   "sint32",
-    FieldDescriptorProto.TYPE_SINT64:   "sint64",
+    FieldDescriptorProto.TYPE_SINT32: "sint32",
+    FieldDescriptorProto.TYPE_SINT64: "sint64",
 }
+
+
+def _inject_auth(client_call_details: grpc.ClientCallDetails, token: str):
+    """Return a new ClientCallDetails with the authorization header injected."""
+    metadata = list(client_call_details.metadata or [])
+    metadata.append(("authorization", token))
+
+    class AuthCallDetails(grpc.ClientCallDetails):
+        def __init__(self):
+            self.method = client_call_details.method
+            self.timeout = client_call_details.timeout
+            self.metadata = metadata
+            self.credentials = client_call_details.credentials
+            self.wait_for_ready = client_call_details.wait_for_ready
+            self.compression = client_call_details.compression
+
+    return AuthCallDetails()
+
+
+class AuthInterceptor(
+    grpc.UnaryUnaryClientInterceptor,
+    grpc.UnaryStreamClientInterceptor,
+    grpc.StreamUnaryClientInterceptor,
+    grpc.StreamStreamClientInterceptor,
+):
+    def __init__(self, auth_header):
+        self.auth_header = auth_header
+
+    def intercept_unary_unary(self, continuation, client_call_details, request):
+        new_details = _inject_auth(client_call_details, self.auth_header)
+
+        return continuation(new_details, request)
+
+    def intercept_unary_stream(self, continuation, client_call_details, request):
+        new_details = _inject_auth(client_call_details, self.auth_header)
+
+        return continuation(new_details, request)
+
+    def intercept_stream_unary(
+        self, continuation, client_call_details, request_iterator
+    ):
+        new_details = _inject_auth(client_call_details, self.auth_header)
+
+        return continuation(new_details, request_iterator)
+
+    def intercept_stream_stream(
+        self, continuation, client_call_details, request_iterator
+    ):
+        new_details = _inject_auth(client_call_details, self.auth_header)
+
+        return continuation(new_details, request_iterator)
 
 
 class GrpcReflectionClient:
     """Client that uses gRPC reflection to interact with services."""
 
-    def __init__(self, address: str = "localhost:50051") -> None:
-        self.address         = address
-        self.channel         = grpc.insecure_channel(address)
+    def __init__(
+        self,
+        address: str = "localhost:50051",
+        auth_header: str | None = None,
+    ) -> None:
+        self.address = address
+        self.auth_header = auth_header
+
+        self.channel = grpc.intercept_channel(
+            grpc.insecure_channel(address),
+            AuthInterceptor(self.auth_header),
+        )
+
         self.reflection_stub = reflection_pb2_grpc.ServerReflectionStub(self.channel)
-        self.pool            = _dp.DescriptorPool()
+        self.pool = _dp.DescriptorPool()
         self._loaded_files: set[str] = set()
 
     def close(self) -> None:
@@ -78,23 +140,27 @@ class GrpcReflectionClient:
     # ──────────────────────────────────────────────────────────────────────
 
     def _get_file_descriptor(self, filename: str) -> FileDescriptorProto:
-        request   = reflection_pb2.ServerReflectionRequest(file_by_filename=filename)
+        request = reflection_pb2.ServerReflectionRequest(file_by_filename=filename)
         responses = self.reflection_stub.ServerReflectionInfo(iter([request]))
         for response in responses:
             if response.HasField("file_descriptor_response"):
-                for proto_bytes in response.file_descriptor_response.file_descriptor_proto:
+                for (
+                    proto_bytes
+                ) in response.file_descriptor_response.file_descriptor_proto:
                     fd = FileDescriptorProto()
                     fd.ParseFromString(proto_bytes)
                     return fd
         raise ValueError(f"File descriptor for {filename} not found")
 
     def _get_file_containing_symbol(self, symbol: str) -> List[FileDescriptorProto]:
-        request   = reflection_pb2.ServerReflectionRequest(file_containing_symbol=symbol)
+        request = reflection_pb2.ServerReflectionRequest(file_containing_symbol=symbol)
         responses = self.reflection_stub.ServerReflectionInfo(iter([request]))
         fds: List[FileDescriptorProto] = []
         for response in responses:
             if response.HasField("file_descriptor_response"):
-                for proto_bytes in response.file_descriptor_response.file_descriptor_proto:
+                for (
+                    proto_bytes
+                ) in response.file_descriptor_response.file_descriptor_proto:
                     fd = FileDescriptorProto()
                     fd.ParseFromString(proto_bytes)
                     fds.append(fd)
@@ -146,7 +212,7 @@ class GrpcReflectionClient:
     # ──────────────────────────────────────────────────────────────────────
 
     def list_services(self) -> List[str]:
-        request   = reflection_pb2.ServerReflectionRequest(list_services="")
+        request = reflection_pb2.ServerReflectionRequest(list_services="")
         responses = self.reflection_stub.ServerReflectionInfo(iter([request]))
         services: List[str] = []
         for response in responses:
@@ -158,15 +224,15 @@ class GrpcReflectionClient:
     def describe_service(self, service_name: str) -> Dict[str, Any]:
         self._resolve_service(service_name)
         svc_desc = self.pool.FindServiceByName(service_name)
-        methods  = []
+        methods = []
         for method in svc_desc.methods:
             info: Dict[str, Any] = {
-                "name":             method.name,
-                "input_type":       method.input_type.full_name,
-                "output_type":      method.output_type.full_name,
+                "name": method.name,
+                "input_type": method.input_type.full_name,
+                "output_type": method.output_type.full_name,
                 "client_streaming": method.client_streaming,
                 "server_streaming": method.server_streaming,
-                "options":          {},
+                "options": {},
             }
             try:
                 opts = method.GetOptions()
@@ -194,46 +260,41 @@ class GrpcReflectionClient:
                 type_name = f.message_type.full_name if f.message_type else None
             elif f.type == FieldDescriptorProto.TYPE_ENUM:
                 type_name = f.enum_type.full_name if f.enum_type else None
-            fields.append({
-                "name":      f.name,
-                "number":    f.number,
-                "type":      f.type,
-                "type_name": type_name,
-                "repeated":  f.label == FieldDescriptorProto.LABEL_REPEATED,
-                "enum_values": (
-                    [v.name for v in f.enum_type.values]
-                    if f.type == FieldDescriptorProto.TYPE_ENUM and f.enum_type
-                    else []
-                ),
-            })
+            fields.append(
+                {
+                    "name": f.name,
+                    "number": f.number,
+                    "type": f.type,
+                    "type_name": type_name,
+                    "repeated": f.label == FieldDescriptorProto.LABEL_REPEATED,
+                    "enum_values": (
+                        [v.name for v in f.enum_type.values]
+                        if f.type == FieldDescriptorProto.TYPE_ENUM and f.enum_type
+                        else []
+                    ),
+                }
+            )
         return {"name": msg_desc.full_name, "fields": fields}
-
-    # ──────────────────────────────────────────────────────────────────────
-    # RPC invocation — unary
-    # ──────────────────────────────────────────────────────────────────────
 
     def invoke_rpc(
         self,
-        method_path:  str,
+        method_path: str,
         request_json: str,
-        auth_header:  Optional[str] = None,
-        timeout:      Optional[float] = None,
+        timeout: Optional[float] = None,
     ) -> Any:
         service_name, method_name = self._parse_method_path(method_path)
         self._resolve_service(service_name)
-        svc_desc    = self.pool.FindServiceByName(service_name)
+        svc_desc = self.pool.FindServiceByName(service_name)
         method_desc = svc_desc.FindMethodByName(method_name)
 
         input_class, output_class = self._make_message_classes(method_desc)
-        request                   = Parse(request_json, input_class())
-        metadata                  = [("authorization", auth_header)] if auth_header else []
-        full_path                 = f"/{svc_desc.full_name}/{method_desc.name}"
+        request = Parse(request_json, input_class())
+        metadata = []
+        full_path = f"/{svc_desc.full_name}/{method_desc.name}"
 
         if method_desc.server_streaming:
             # Return iterator consumed by invoke_rpc_streaming
-            raise ValueError(
-                "Use invoke_rpc_streaming() for server-streaming methods"
-            )
+            raise ValueError("Use invoke_rpc_streaming() for server-streaming methods")
 
         response = self.channel.unary_unary(
             full_path,
@@ -249,21 +310,20 @@ class GrpcReflectionClient:
 
     def invoke_rpc_streaming(
         self,
-        method_path:  str,
+        method_path: str,
         request_json: str,
-        auth_header:  Optional[str] = None,
-        timeout:      Optional[float] = None,
+        timeout: Optional[float] = None,
     ) -> Iterator[Dict[str, Any]]:
         """Generator: yields one dict per streamed response message."""
         service_name, method_name = self._parse_method_path(method_path)
         self._resolve_service(service_name)
-        svc_desc    = self.pool.FindServiceByName(service_name)
+        svc_desc = self.pool.FindServiceByName(service_name)
         method_desc = svc_desc.FindMethodByName(method_name)
 
         input_class, output_class = self._make_message_classes(method_desc)
-        request                   = Parse(request_json, input_class())
-        metadata                  = [("authorization", auth_header)] if auth_header else []
-        full_path                 = f"/{svc_desc.full_name}/{method_desc.name}"
+        request = Parse(request_json, input_class())
+        metadata = []
+        full_path = f"/{svc_desc.full_name}/{method_desc.name}"
 
         responses = self.channel.unary_stream(
             full_path,
@@ -307,6 +367,7 @@ class GrpcReflectionClient:
 # Auth helpers
 # ──────────────────────────────────────────────────────────────────────────────
 
+
 def build_auth_header(args: argparse.Namespace) -> Optional[str]:
     if getattr(args, "auth", "none") == "basic":
         if not getattr(args, "user", None):
@@ -337,16 +398,17 @@ def parse_method_path(target: str):
 # CLI main
 # ──────────────────────────────────────────────────────────────────────────────
 
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="gRPC reflection client",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=__doc__,
     )
-    parser.add_argument("--server",  default="localhost:50051")
-    parser.add_argument("--auth",    choices=["basic", "jwt", "none"], default="none")
-    parser.add_argument("--user",    help="user:pass for Basic auth")
-    parser.add_argument("--token",   help="JWT token")
+    parser.add_argument("--server", default="localhost:50051")
+    parser.add_argument("--auth", choices=["basic", "jwt", "none"], default="none")
+    parser.add_argument("--user", help="user:pass for Basic auth")
+    parser.add_argument("--token", help="JWT token")
     parser.add_argument("--timeout", type=float)
 
     sub = parser.add_subparsers(dest="command")
@@ -364,7 +426,7 @@ def main() -> None:
     cp.add_argument("method")
     cp.add_argument("request")
 
-    # repl  ← new
+    # repl
     rp = sub.add_parser("repl", help="Start interactive REPL")
     rp.add_argument("--service", default=None, help="Pre-select a service")
 
@@ -373,7 +435,7 @@ def main() -> None:
         parser.print_help()
         sys.exit(1)
 
-    client = GrpcReflectionClient(args.server)
+    client = GrpcReflectionClient(args.server, build_auth_header(args))
 
     try:
         if args.command == "list":
@@ -386,15 +448,14 @@ def main() -> None:
             _cmd_call(client, args)
 
         elif args.command == "repl":
-            auth = build_auth_header(args)
             # Import here to avoid pulling in prompt_toolkit for non-repl use
-            import sys
             sys.path.insert(0, ".")
+
             from repl.tea.runtime import ReplRuntime
+
             ReplRuntime(
                 client=client,
                 server=args.server,
-                auth_header=auth,
                 initial_service=getattr(args, "service", None),
             ).run()
 
@@ -406,7 +467,9 @@ def main() -> None:
         sys.exit(0)
     except Exception as e:
         print(f"❌ Error: {e}")
-        import traceback; traceback.print_exc()
+        import traceback
+
+        traceback.print_exc()
         sys.exit(1)
     finally:
         client.close()
@@ -416,14 +479,17 @@ def main() -> None:
 # Sub-command implementations (unchanged from original)
 # ──────────────────────────────────────────────────────────────────────────────
 
+
 def _cmd_list(client: GrpcReflectionClient, args: argparse.Namespace) -> None:
     if getattr(args, "service", None):
         info = client.describe_service(args.service)
         print(f"📋 Service: {info['name']}\n")
         for m in info["methods"]:
             s = ""
-            if m["server_streaming"]: s += "server-streaming "
-            if m["client_streaming"]: s += "client-streaming"
+            if m["server_streaming"]:
+                s += "server-streaming "
+            if m["client_streaming"]:
+                s += "client-streaming"
             s = f" ({s.strip()})" if s else ""
             print(f"  • {m['name']}{s}")
             print(f"    In:  {m['input_type']}")
@@ -447,7 +513,8 @@ def _cmd_describe(client: GrpcReflectionClient, args: argparse.Namespace) -> Non
             for m in info["methods"]:
                 if m["name"] == method_name:
                     print(f"📋 {service_name}.{method_name}")
-                    if m["server_streaming"]: print("  [server-streaming]")
+                    if m["server_streaming"]:
+                        print("  [server-streaming]")
                     print(f"  In:  {m['input_type']}")
                     print(f"  Out: {m['output_type']}")
                     return
@@ -465,22 +532,19 @@ def _cmd_describe(client: GrpcReflectionClient, args: argparse.Namespace) -> Non
 
 
 def _cmd_call(client: GrpcReflectionClient, args: argparse.Namespace) -> None:
-    auth = build_auth_header(args)
     print(f"🚀 {args.method}")
     service_name, method_name = GrpcReflectionClient._parse_method_path(args.method)
     client._resolve_service(service_name)
-    svc_desc    = client.pool.FindServiceByName(service_name)
+    svc_desc = client.pool.FindServiceByName(service_name)
     method_desc = svc_desc.FindMethodByName(method_name)
 
     if method_desc.server_streaming:
         for chunk in client.invoke_rpc_streaming(
-            args.method, args.request, auth, timeout=args.timeout
+            args.method, args.request, timeout=args.timeout
         ):
             print(f"📦 {json.dumps(chunk, indent=2)}")
     else:
-        result = client.invoke_rpc(
-            args.method, args.request, auth, timeout=args.timeout
-        )
+        result = client.invoke_rpc(args.method, args.request, timeout=args.timeout)
         print(f"📥 {json.dumps(result, indent=2)}")
 
 

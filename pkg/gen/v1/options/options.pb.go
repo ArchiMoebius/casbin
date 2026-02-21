@@ -27,28 +27,28 @@ const (
 type Action int32
 
 const (
-	Action_ACTION_UNSPECIFIED Action = 0
-	Action_ACTION_GET         Action = 1
-	Action_ACTION_PUT         Action = 2
-	Action_ACTION_DELETE      Action = 3
-	Action_ACTION_WATCH       Action = 5
+	Action_ACTION_REFLECT Action = 0
+	Action_ACTION_GET     Action = 1
+	Action_ACTION_PUT     Action = 2
+	Action_ACTION_DELETE  Action = 3
+	Action_ACTION_WATCH   Action = 5
 )
 
 // Enum value maps for Action.
 var (
 	Action_name = map[int32]string{
-		0: "ACTION_UNSPECIFIED",
+		0: "ACTION_REFLECT",
 		1: "ACTION_GET",
 		2: "ACTION_PUT",
 		3: "ACTION_DELETE",
 		5: "ACTION_WATCH",
 	}
 	Action_value = map[string]int32{
-		"ACTION_UNSPECIFIED": 0,
-		"ACTION_GET":         1,
-		"ACTION_PUT":         2,
-		"ACTION_DELETE":      3,
-		"ACTION_WATCH":       5,
+		"ACTION_REFLECT": 0,
+		"ACTION_GET":     1,
+		"ACTION_PUT":     2,
+		"ACTION_DELETE":  3,
+		"ACTION_WATCH":   5,
 	}
 )
 
@@ -122,7 +122,7 @@ func (x *MethodOptions) GetRequiredAction() Action {
 	if x != nil {
 		return x.RequiredAction
 	}
-	return Action_ACTION_UNSPECIFIED
+	return Action_ACTION_REFLECT
 }
 
 var file_v1_options_options_proto_extTypes = []protoimpl.ExtensionInfo{
@@ -149,9 +149,9 @@ const file_v1_options_options_proto_rawDesc = "" +
 	"\x18v1/options/options.proto\x12\n" +
 	"options.v1\x1a google/protobuf/descriptor.proto\"L\n" +
 	"\rMethodOptions\x12;\n" +
-	"\x0frequired_action\x18\x01 \x01(\x0e2\x12.options.v1.ActionR\x0erequiredAction*e\n" +
-	"\x06Action\x12\x16\n" +
-	"\x12ACTION_UNSPECIFIED\x10\x00\x12\x0e\n" +
+	"\x0frequired_action\x18\x01 \x01(\x0e2\x12.options.v1.ActionR\x0erequiredAction*a\n" +
+	"\x06Action\x12\x12\n" +
+	"\x0eACTION_REFLECT\x10\x00\x12\x0e\n" +
 	"\n" +
 	"ACTION_GET\x10\x01\x12\x0e\n" +
 	"\n" +

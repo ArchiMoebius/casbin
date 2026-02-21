@@ -19,26 +19,32 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	KVService_ListKeys_FullMethodName = "/kv.v1.KVService/ListKeys"
-	KVService_Get_FullMethodName      = "/kv.v1.KVService/Get"
-	KVService_Put_FullMethodName      = "/kv.v1.KVService/Put"
-	KVService_Watch_FullMethodName    = "/kv.v1.KVService/Watch"
+	KVService_ListKeys_FullMethodName    = "/kv.v1.KVService/ListKeys"
+	KVService_Get_FullMethodName         = "/kv.v1.KVService/Get"
+	KVService_Put_FullMethodName         = "/kv.v1.KVService/Put"
+	KVService_Watch_FullMethodName       = "/kv.v1.KVService/Watch"
+	KVService_SearchRegex_FullMethodName = "/kv.v1.KVService/SearchRegex"
+	KVService_SearchExact_FullMethodName = "/kv.v1.KVService/SearchExact"
 )
 
 // KVServiceClient is the client API for KVService service.
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type KVServiceClient interface {
-	// Bootstrap: populate key completion cache on connect.
-	// No cmd — never shown as a user command.
+	// ── Bootstrap ─────────────────────────────────────────────────────────────
 	ListKeys(ctx context.Context, in *ListKeysRequest, opts ...grpc.CallOption) (*ListKeysResponse, error)
-	// key.get
+	// ── key.get ───────────────────────────────────────────────────────────────
 	Get(ctx context.Context, in *GetRequest, opts ...grpc.CallOption) (*GetResponse, error)
-	// key.put — marks refresh_after_mutation so the key list is re-fetched
-	// after every successful write.
+	// ── key.put ───────────────────────────────────────────────────────────────
 	Put(ctx context.Context, in *PutRequest, opts ...grpc.CallOption) (*PutResponse, error)
-	// key.watch
+	// ── key.watch ─────────────────────────────────────────────────────────────
 	Watch(ctx context.Context, in *WatchRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[WatchResponse], error)
+	// ── key.search.regex ──────────────────────────────────────────────────────
+	// Returns every key whose NAME matches a RE2 regular expression.
+	SearchRegex(ctx context.Context, in *SearchRegexRequest, opts ...grpc.CallOption) (*SearchRegexResponse, error)
+	// ── key.search.exact ──────────────────────────────────────────────────────
+	// Returns every key whose NAME exactly equals the given string.
+	SearchExact(ctx context.Context, in *SearchExactRequest, opts ...grpc.CallOption) (*SearchExactResponse, error)
 }
 
 type kVServiceClient struct {
@@ -98,20 +104,44 @@ func (c *kVServiceClient) Watch(ctx context.Context, in *WatchRequest, opts ...g
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type KVService_WatchClient = grpc.ServerStreamingClient[WatchResponse]
 
+func (c *kVServiceClient) SearchRegex(ctx context.Context, in *SearchRegexRequest, opts ...grpc.CallOption) (*SearchRegexResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(SearchRegexResponse)
+	err := c.cc.Invoke(ctx, KVService_SearchRegex_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *kVServiceClient) SearchExact(ctx context.Context, in *SearchExactRequest, opts ...grpc.CallOption) (*SearchExactResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(SearchExactResponse)
+	err := c.cc.Invoke(ctx, KVService_SearchExact_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // KVServiceServer is the server API for KVService service.
 // All implementations must embed UnimplementedKVServiceServer
 // for forward compatibility.
 type KVServiceServer interface {
-	// Bootstrap: populate key completion cache on connect.
-	// No cmd — never shown as a user command.
+	// ── Bootstrap ─────────────────────────────────────────────────────────────
 	ListKeys(context.Context, *ListKeysRequest) (*ListKeysResponse, error)
-	// key.get
+	// ── key.get ───────────────────────────────────────────────────────────────
 	Get(context.Context, *GetRequest) (*GetResponse, error)
-	// key.put — marks refresh_after_mutation so the key list is re-fetched
-	// after every successful write.
+	// ── key.put ───────────────────────────────────────────────────────────────
 	Put(context.Context, *PutRequest) (*PutResponse, error)
-	// key.watch
+	// ── key.watch ─────────────────────────────────────────────────────────────
 	Watch(*WatchRequest, grpc.ServerStreamingServer[WatchResponse]) error
+	// ── key.search.regex ──────────────────────────────────────────────────────
+	// Returns every key whose NAME matches a RE2 regular expression.
+	SearchRegex(context.Context, *SearchRegexRequest) (*SearchRegexResponse, error)
+	// ── key.search.exact ──────────────────────────────────────────────────────
+	// Returns every key whose NAME exactly equals the given string.
+	SearchExact(context.Context, *SearchExactRequest) (*SearchExactResponse, error)
 	mustEmbedUnimplementedKVServiceServer()
 }
 
@@ -133,6 +163,12 @@ func (UnimplementedKVServiceServer) Put(context.Context, *PutRequest) (*PutRespo
 }
 func (UnimplementedKVServiceServer) Watch(*WatchRequest, grpc.ServerStreamingServer[WatchResponse]) error {
 	return status.Error(codes.Unimplemented, "method Watch not implemented")
+}
+func (UnimplementedKVServiceServer) SearchRegex(context.Context, *SearchRegexRequest) (*SearchRegexResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method SearchRegex not implemented")
+}
+func (UnimplementedKVServiceServer) SearchExact(context.Context, *SearchExactRequest) (*SearchExactResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method SearchExact not implemented")
 }
 func (UnimplementedKVServiceServer) mustEmbedUnimplementedKVServiceServer() {}
 func (UnimplementedKVServiceServer) testEmbeddedByValue()                   {}
@@ -220,6 +256,42 @@ func _KVService_Watch_Handler(srv interface{}, stream grpc.ServerStream) error {
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type KVService_WatchServer = grpc.ServerStreamingServer[WatchResponse]
 
+func _KVService_SearchRegex_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SearchRegexRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(KVServiceServer).SearchRegex(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: KVService_SearchRegex_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(KVServiceServer).SearchRegex(ctx, req.(*SearchRegexRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _KVService_SearchExact_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SearchExactRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(KVServiceServer).SearchExact(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: KVService_SearchExact_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(KVServiceServer).SearchExact(ctx, req.(*SearchExactRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // KVService_ServiceDesc is the grpc.ServiceDesc for KVService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -238,6 +310,14 @@ var KVService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "Put",
 			Handler:    _KVService_Put_Handler,
+		},
+		{
+			MethodName: "SearchRegex",
+			Handler:    _KVService_SearchRegex_Handler,
+		},
+		{
+			MethodName: "SearchExact",
+			Handler:    _KVService_SearchExact_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

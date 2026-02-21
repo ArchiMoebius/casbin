@@ -18,10 +18,14 @@ import (
 // allowing an unannotated RPC through.
 func actionToString(a optionsv1.Action) (string, error) {
 	switch a {
+	case optionsv1.Action_ACTION_REFLECT:
+		return "reflect", nil
 	case optionsv1.Action_ACTION_GET:
 		return "get", nil
 	case optionsv1.Action_ACTION_PUT:
 		return "put", nil
+	case optionsv1.Action_ACTION_DELETE:
+		return "delete", nil
 	case optionsv1.Action_ACTION_WATCH:
 		return "watch", nil
 	default:
@@ -40,14 +44,6 @@ func BuildMethodActionMap() (map[string]string, error) {
 		for i := 0; i < services.Len(); i++ {
 			svc := services.Get(i)
 			fullSvcName := fmt.Sprintf("/%s.%s", fd.Package(), svc.Name())
-
-			// Skip reflection services — they're registered by gRPC itself and
-			// bypass user-defined interceptors entirely. We skip them here just
-			// to suppress warnings about missing annotations. Reflection is
-			// metadata-only (lists services/methods) and is safe to expose.
-			if strings.HasPrefix(string(fd.Package()), "grpc.reflection") {
-				continue
-			}
 
 			methods := svc.Methods()
 			for j := 0; j < methods.Len(); j++ {
@@ -70,8 +66,12 @@ func BuildMethodActionMap() (map[string]string, error) {
 					// This will be caught by the len check below if it's
 					// the only method, but log it either way so the operator
 					// knows which RPC is misconfigured.
-					fmt.Printf("WARNING: skipping %s/%s: %v\n", fullSvcName, m.Name(), err)
-					continue
+					if !strings.HasPrefix(fullSvcName, "/grpc.reflection") {
+						fmt.Printf("WARNING: skipping %s/%s: %v\n", fullSvcName, m.Name(), err)
+						continue
+					} else {
+						action = "reflect"
+					}
 				}
 
 				fullMethodName := fmt.Sprintf("%s/%s", fullSvcName, m.Name())
