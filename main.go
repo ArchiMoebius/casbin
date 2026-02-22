@@ -262,7 +262,7 @@ func (s *KVServer) SearchExact(
 
 // ----------------- User Services ----------------
 
-// UserServer implements pb.UserServiceServer.
+// UserServer implements pbAudit.UserServiceServer.
 type UserServer struct {
 	pbUser.UnimplementedUserServiceServer
 
@@ -397,7 +397,7 @@ func (s *UserServer) ListUsersCmd(
 
 // ----------------- Config Service ---------------
 
-// ConfigServer implements pb.ConfigServiceServer.
+// ConfigServer implements pbAudit.ConfigServiceServer.
 type ConfigServer struct {
 	pbConfig.UnimplementedConfigServiceServer
 
@@ -595,7 +595,7 @@ func (s *ConfigServer) ExportConfig(
 
 // ----------------- Audit Service ----------------
 
-// AuditServer implements pb.AuditServiceServer.
+// AuditServer implements pbAudit.AuditServiceServer.
 // The log is an append-only in-memory slice.  In production this would be a
 // time-series DB or a Kafka consumer.
 type AuditServer struct {
@@ -645,6 +645,22 @@ func NewAuditServer() *AuditServer {
 		s.byID[e.id] = evt
 	}
 	return s
+}
+
+// ── ListEventIds ─────────────────────────────────────────────────────────────
+// Bootstrap RPC. Returns all known event IDs for audit.get --event_id <TAB>.
+func (s *AuditServer) ListEventIds(
+	ctx context.Context, req *pbAudit.ListEventIdsRequest,
+) (*pbAudit.ListEventIdsResponse, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	ids := make([]string, 0, len(s.byID))
+	for id := range s.byID {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	return &pbAudit.ListEventIdsResponse{EventIds: ids}, nil
 }
 
 // ── ListActors ────────────────────────────────────────────────────────────────

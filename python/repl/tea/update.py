@@ -100,7 +100,7 @@ def _handle_user_input(model: Model, raw: str) -> tuple[Model, list]:
         return _handle_header(model, text[7:].strip())
 
     if text in ("help", "?") or text.startswith("help ") or text.startswith("? "):
-        return model, [_help_cmd(text, model.namespace_prefix())]
+        return model, [_help_cmd(text, model)]
 
     # ── Resolve command — namespace-aware ────────────────────────────────────
     try:
@@ -117,6 +117,10 @@ def _handle_user_input(model: Model, raw: str) -> tuple[Model, list]:
     canonical = model.resolve_cmd(cmd_word)
 
     if canonical is None:
+        return _handle_use(model, cmd_word.strip())
+
+        # TODO: decide to either do this /\ or to do this \/
+
         # Give a helpful suggestion
         prefix = model.namespace_prefix()
         subtree_key = (prefix + "." + cmd_word) if prefix else cmd_word
@@ -396,12 +400,31 @@ def _error_cmd(msg):
     return RenderError(message=msg)
 
 
-def _help_cmd(text, namespace_prefix=""):
+def _help_cmd(text, model: "Model"):
+    """
+    Parse 'help [target]' and build a RenderHelp cmd.
+
+    Resolution:
+      help               → scope to active namespace (or full list at root)
+      help get           → in [user] namespace → resolves to user.get
+      help user.get      → absolute path → user.get detail
+      help user          → subtree listing for user.*
+    """
     parts = text.split(None, 1)
-    raw_prefix = parts[1].strip() if len(parts) > 1 else ""
-    # If no explicit prefix given and namespace active, scope help to namespace
-    effective = raw_prefix or namespace_prefix
-    return RenderHelp(prefix=effective, namespace=namespace_prefix)
+    raw_target = parts[1].strip() if len(parts) > 1 else ""
+    ns = model.namespace_prefix()
+
+    if raw_target:
+        # Try namespace-prefixed first (mirrors resolve_cmd logic)
+        if ns:
+            prefixed = ns + "." + raw_target
+            if model.ui_spec.find_cmd(prefixed) or model.ui_spec.subtree(prefixed):
+                return RenderHelp(prefix=prefixed, namespace=ns)
+        # Fall back to absolute
+        return RenderHelp(prefix=raw_target, namespace=ns)
+
+    # No target: scope to active namespace
+    return RenderHelp(prefix=ns, namespace=ns)
 
 
 def _error(model: Model, msg: str) -> tuple[Model, list]:

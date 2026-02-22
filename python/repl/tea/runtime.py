@@ -97,7 +97,10 @@ class ReplRuntime:
         # Give the completer a live view of the namespace via a lambda so it
         # always reads the current model state without holding a stale copy.
         inner = ReplCompleter(
-            ui_spec, self._cache, namespace_fn=lambda: self._model.namespace
+            ui_spec,
+            self._cache,
+            namespace_fn=lambda: self._model.namespace,
+            live_fetch_fn=self._live_fetch_sync,
         )
         completer = HeaderAwareCompleter(inner)
         self._inner_completer = inner
@@ -107,7 +110,11 @@ class ReplRuntime:
             history=FileHistory(str(Path.home() / ".grpc_repl_history")),
             auto_suggest=AutoSuggestFromHistory(),
             style=repl_style,
-            key_bindings=build_key_bindings(completer),
+            key_bindings=build_key_bindings(
+                completer,
+                is_streaming_fn=lambda: self._model.stream_active,
+                cancel_fn=self._stream_cancel.set,
+            ),
             bottom_toolbar=self._bottom_toolbar,
             refresh_interval=0.5,
             multiline=False,
@@ -388,21 +395,99 @@ class ReplRuntime:
         except Exception:
             pass  # completion fetch failure is non-fatal
 
-    def _fill_cache_from_result(self, cs: CompletionSource, result: Any) -> None:
+    def _field_specs_for_source(
+        self, svc_name: str, method_name: str, source_field: str
+    ) -> dict[str, Any]:
+        """
+        Build field_specs for the ELEMENT type of source_field.
+
+        Example:
+          ListKeysResponse  { repeated ConfigEntry keys = 1 }
+          source_field = "keys"
+          → ConfigEntry descriptor → FieldSpec for key, value
+
+          ListUsersResponse { repeated User users = 1 }
+          source_field = "users"
+          → User descriptor → FieldSpec for id, username, role, active, ...
+
+          ListKeysResponse  { repeated string keys = 1 }  (scalar)
+          source_field = "keys"
+          → no message_type → fall back to ListKeysResponse top-level fields
+        """
         field_specs: dict[str, Any] = {}
         try:
-            svc_name, method_name = cs.source_rpc.rsplit(".", 1)
             svc_desc = self._client.pool.FindServiceByName(svc_name)
             m_desc = svc_desc.FindMethodByName(method_name)
             bld = UISpecBuilder()
-            for f in bld._build_fields(self._client, m_desc.output_type):
-                field_specs[f.name] = f
+
+            # Walk the dot-path of source_field through the output type to find
+            # the field descriptor whose message_type is the element type.
+            desc = m_desc.output_type
+            for part in source_field.split("."):
+                f_desc = desc.fields_by_name.get(part) if desc else None
+                if f_desc is None:
+                    break
+                if f_desc.message_type:
+                    desc = f_desc.message_type
+                else:
+                    # Scalar repeated field (e.g. repeated string) — no element
+                    # message type; projection handles scalars via is_scalar branch.
+                    desc = None
+                    break
+
+            # desc is now the element message descriptor (or None for scalars)
+            if desc and desc != m_desc.output_type:
+                for f in bld._build_fields(self._client, desc):
+                    field_specs[f.name] = f
+            else:
+                # Fall back to top-level output type fields
+                for f in bld._build_fields(self._client, m_desc.output_type):
+                    field_specs[f.name] = f
         except Exception:
             pass
+        return field_specs
+
+    def _fill_cache_from_result(self, cs: CompletionSource, result: Any) -> None:
+        try:
+            svc_name, method_name = cs.source_rpc.rsplit(".", 1)
+        except ValueError:
+            return
+
+        field_specs = self._field_specs_for_source(
+            svc_name, method_name, cs.source_field
+        )
 
         rows = project_candidates(result, cs, field_specs)
+
         self._cache.store(cs.source_rpc, rows)
         self._dispatch(CompletionLoaded(source_rpc=cs.source_rpc))
+
+    def _live_fetch_sync(
+        self,
+        cs: CompletionSource,
+        extra_vars: dict[str, str] | None = None,
+    ) -> None:
+        """
+        Synchronous live completion fetch called from the completer on Tab.
+
+        Expands ${VAR} in source_request using:
+          1. REPL variables (set ENV prod)
+          2. extra_vars — flag values already typed in the buffer
+             e.g. --env dev → {"env": "dev", "ENV": "dev"}
+        """
+        try:
+            svc, method = cs.source_rpc.rsplit(".", 1)
+            vars_merged = {**self._model.variables_dict(), **(extra_vars or {})}
+            req_json = expand_variables(cs.source_request, vars_merged)
+            result = self._client.invoke_rpc(
+                f"{svc}/{method}",
+                req_json,
+            )
+            field_specs = self._field_specs_for_source(svc, method, cs.source_field)
+            rows = project_candidates(result, cs, field_specs)
+            self._cache.store(cs.source_rpc, rows)
+        except Exception:
+            pass
 
     # ──────────────────────────────────────────────────────────────────────
     # Wizard

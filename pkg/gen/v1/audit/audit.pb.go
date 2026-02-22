@@ -102,11 +102,91 @@ func (x *ListActorsResponse) GetActors() []*Actor {
 	return nil
 }
 
-// Actor is used as a completion candidate row.  The "type" field enables
-// the neq/present filters in stream.user and search.
+// Bootstrap: returns every known event_id for audit.get --event_id <TAB>
+type ListEventIdsRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListEventIdsRequest) Reset() {
+	*x = ListEventIdsRequest{}
+	mi := &file_v1_audit_audit_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListEventIdsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListEventIdsRequest) ProtoMessage() {}
+
+func (x *ListEventIdsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_v1_audit_audit_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListEventIdsRequest.ProtoReflect.Descriptor instead.
+func (*ListEventIdsRequest) Descriptor() ([]byte, []int) {
+	return file_v1_audit_audit_proto_rawDescGZIP(), []int{2}
+}
+
+type ListEventIdsResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	EventIds      []string               `protobuf:"bytes,1,rep,name=event_ids,json=eventIds,proto3" json:"event_ids,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListEventIdsResponse) Reset() {
+	*x = ListEventIdsResponse{}
+	mi := &file_v1_audit_audit_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListEventIdsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListEventIdsResponse) ProtoMessage() {}
+
+func (x *ListEventIdsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_v1_audit_audit_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListEventIdsResponse.ProtoReflect.Descriptor instead.
+func (*ListEventIdsResponse) Descriptor() ([]byte, []int) {
+	return file_v1_audit_audit_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *ListEventIdsResponse) GetEventIds() []string {
+	if x != nil {
+		return x.EventIds
+	}
+	return nil
+}
+
+// Actor candidate row. "type" drives neq/present filters.
 type Actor struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"` // the actor identifier, e.g. "alice"
+	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
 	Type          string                 `protobuf:"bytes,2,opt,name=type,proto3" json:"type,omitempty"` // "human" | "service" | "system"
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -114,7 +194,7 @@ type Actor struct {
 
 func (x *Actor) Reset() {
 	*x = Actor{}
-	mi := &file_v1_audit_audit_proto_msgTypes[2]
+	mi := &file_v1_audit_audit_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -126,7 +206,7 @@ func (x *Actor) String() string {
 func (*Actor) ProtoMessage() {}
 
 func (x *Actor) ProtoReflect() protoreflect.Message {
-	mi := &file_v1_audit_audit_proto_msgTypes[2]
+	mi := &file_v1_audit_audit_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -139,7 +219,7 @@ func (x *Actor) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Actor.ProtoReflect.Descriptor instead.
 func (*Actor) Descriptor() ([]byte, []int) {
-	return file_v1_audit_audit_proto_rawDescGZIP(), []int{2}
+	return file_v1_audit_audit_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *Actor) GetName() string {
@@ -156,19 +236,21 @@ func (x *Actor) GetType() string {
 	return ""
 }
 
-// Action sub-message — with expand_nested:true in audit.get, its fields are
-// rendered as "action.verb" and "action.target" rather than a JSON blob.
+// Action sub-message. With expand_nested:true in audit.get renders as:
+//
+//	action.verb    DELETE
+//	action.target  /api/keys/bar
 type Action struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Verb          string                 `protobuf:"bytes,1,opt,name=verb,proto3" json:"verb,omitempty"`     // e.g. "PUT", "DELETE", "LOGIN"
-	Target        string                 `protobuf:"bytes,2,opt,name=target,proto3" json:"target,omitempty"` // e.g. "/api/keys/foo"
+	Verb          string                 `protobuf:"bytes,1,opt,name=verb,proto3" json:"verb,omitempty"`
+	Target        string                 `protobuf:"bytes,2,opt,name=target,proto3" json:"target,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *Action) Reset() {
 	*x = Action{}
-	mi := &file_v1_audit_audit_proto_msgTypes[3]
+	mi := &file_v1_audit_audit_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -180,7 +262,7 @@ func (x *Action) String() string {
 func (*Action) ProtoMessage() {}
 
 func (x *Action) ProtoReflect() protoreflect.Message {
-	mi := &file_v1_audit_audit_proto_msgTypes[3]
+	mi := &file_v1_audit_audit_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -193,7 +275,7 @@ func (x *Action) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Action.ProtoReflect.Descriptor instead.
 func (*Action) Descriptor() ([]byte, []int) {
-	return file_v1_audit_audit_proto_rawDescGZIP(), []int{3}
+	return file_v1_audit_audit_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *Action) GetVerb() string {
@@ -212,35 +294,22 @@ func (x *Action) GetTarget() string {
 
 type AuditEvent struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// hidden: true means this column is suppressed in DISPLAY_TABLE and
-	// DISPLAY_STREAM views (too wide for a stream row) but still appears
-	// in the DISPLAY_KV view from audit.get.
-	InternalId string `protobuf:"bytes,1,opt,name=internal_id,json=internalId,proto3" json:"internal_id,omitempty"`
-	Timestamp  int64  `protobuf:"varint,2,opt,name=timestamp,proto3" json:"timestamp,omitempty"`
-	Actor      string `protobuf:"bytes,3,opt,name=actor,proto3" json:"actor,omitempty"`
-	// CELL_JSON renders the inline action verb without escaping:
-	//
-	//	action  {"verb":"PUT","target":"/api/keys/foo"}
-	//
-	// expand_nested (on the method) overrides this to show sub-fields separately.
-	Action     *Action `protobuf:"bytes,4,opt,name=action,proto3" json:"action,omitempty"`
-	Service    string  `protobuf:"bytes,5,opt,name=service,proto3" json:"service,omitempty"`
-	ResourceId string  `protobuf:"bytes,6,opt,name=resource_id,json=resourceId,proto3" json:"resource_id,omitempty"`
-	// CELL_BYTES renders the raw binary payload as a hex string:
-	//
-	//	raw_payload  61 6c 69 63 65
-	RawPayload []byte `protobuf:"bytes,7,opt,name=raw_payload,json=rawPayload,proto3" json:"raw_payload,omitempty"`
-	// CELL_JSON renders the metadata map compactly inline:
-	//
-	//	metadata  {"ip":"10.0.0.1","ua":"curl/7.88"}
-	Metadata      string `protobuf:"bytes,8,opt,name=metadata,proto3" json:"metadata,omitempty"`
+	// hidden:true — suppressed in DISPLAY_TABLE/STREAM but visible in DISPLAY_KV.
+	InternalId    string  `protobuf:"bytes,1,opt,name=internal_id,json=internalId,proto3" json:"internal_id,omitempty"`
+	Timestamp     int64   `protobuf:"varint,2,opt,name=timestamp,proto3" json:"timestamp,omitempty"`
+	Actor         string  `protobuf:"bytes,3,opt,name=actor,proto3" json:"actor,omitempty"`
+	Action        *Action `protobuf:"bytes,4,opt,name=action,proto3" json:"action,omitempty"`
+	Service       string  `protobuf:"bytes,5,opt,name=service,proto3" json:"service,omitempty"`
+	ResourceId    string  `protobuf:"bytes,6,opt,name=resource_id,json=resourceId,proto3" json:"resource_id,omitempty"`
+	RawPayload    []byte  `protobuf:"bytes,7,opt,name=raw_payload,json=rawPayload,proto3" json:"raw_payload,omitempty"`
+	Metadata      string  `protobuf:"bytes,8,opt,name=metadata,proto3" json:"metadata,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *AuditEvent) Reset() {
 	*x = AuditEvent{}
-	mi := &file_v1_audit_audit_proto_msgTypes[4]
+	mi := &file_v1_audit_audit_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -252,7 +321,7 @@ func (x *AuditEvent) String() string {
 func (*AuditEvent) ProtoMessage() {}
 
 func (x *AuditEvent) ProtoReflect() protoreflect.Message {
-	mi := &file_v1_audit_audit_proto_msgTypes[4]
+	mi := &file_v1_audit_audit_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -265,7 +334,7 @@ func (x *AuditEvent) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AuditEvent.ProtoReflect.Descriptor instead.
 func (*AuditEvent) Descriptor() ([]byte, []int) {
-	return file_v1_audit_audit_proto_rawDescGZIP(), []int{4}
+	return file_v1_audit_audit_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *AuditEvent) GetInternalId() string {
@@ -326,15 +395,15 @@ func (x *AuditEvent) GetMetadata() string {
 
 type StreamEventsRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Service       string                 `protobuf:"bytes,1,opt,name=service,proto3" json:"service,omitempty"` // optional filter — empty = all services
-	Actor         string                 `protobuf:"bytes,2,opt,name=actor,proto3" json:"actor,omitempty"`     // optional actor filter
+	Service       string                 `protobuf:"bytes,1,opt,name=service,proto3" json:"service,omitempty"`
+	Actor         string                 `protobuf:"bytes,2,opt,name=actor,proto3" json:"actor,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *StreamEventsRequest) Reset() {
 	*x = StreamEventsRequest{}
-	mi := &file_v1_audit_audit_proto_msgTypes[5]
+	mi := &file_v1_audit_audit_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -346,7 +415,7 @@ func (x *StreamEventsRequest) String() string {
 func (*StreamEventsRequest) ProtoMessage() {}
 
 func (x *StreamEventsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_v1_audit_audit_proto_msgTypes[5]
+	mi := &file_v1_audit_audit_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -359,7 +428,7 @@ func (x *StreamEventsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StreamEventsRequest.ProtoReflect.Descriptor instead.
 func (*StreamEventsRequest) Descriptor() ([]byte, []int) {
-	return file_v1_audit_audit_proto_rawDescGZIP(), []int{5}
+	return file_v1_audit_audit_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *StreamEventsRequest) GetService() string {
@@ -385,7 +454,7 @@ type GetEventRequest struct {
 
 func (x *GetEventRequest) Reset() {
 	*x = GetEventRequest{}
-	mi := &file_v1_audit_audit_proto_msgTypes[6]
+	mi := &file_v1_audit_audit_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -397,7 +466,7 @@ func (x *GetEventRequest) String() string {
 func (*GetEventRequest) ProtoMessage() {}
 
 func (x *GetEventRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_v1_audit_audit_proto_msgTypes[6]
+	mi := &file_v1_audit_audit_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -410,7 +479,7 @@ func (x *GetEventRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetEventRequest.ProtoReflect.Descriptor instead.
 func (*GetEventRequest) Descriptor() ([]byte, []int) {
-	return file_v1_audit_audit_proto_rawDescGZIP(), []int{6}
+	return file_v1_audit_audit_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *GetEventRequest) GetEventId() string {
@@ -421,16 +490,17 @@ func (x *GetEventRequest) GetEventId() string {
 }
 
 type SearchEventsRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Actor         string                 `protobuf:"bytes,1,opt,name=actor,proto3" json:"actor,omitempty"`
-	Limit         int32                  `protobuf:"varint,2,opt,name=limit,proto3" json:"limit,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Actor string                 `protobuf:"bytes,1,opt,name=actor,proto3" json:"actor,omitempty"`
+	// int_completion_end > 0 enables tab-completion: 10, 25, 50, 100
+	Limit         int32 `protobuf:"varint,2,opt,name=limit,proto3" json:"limit,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *SearchEventsRequest) Reset() {
 	*x = SearchEventsRequest{}
-	mi := &file_v1_audit_audit_proto_msgTypes[7]
+	mi := &file_v1_audit_audit_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -442,7 +512,7 @@ func (x *SearchEventsRequest) String() string {
 func (*SearchEventsRequest) ProtoMessage() {}
 
 func (x *SearchEventsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_v1_audit_audit_proto_msgTypes[7]
+	mi := &file_v1_audit_audit_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -455,7 +525,7 @@ func (x *SearchEventsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SearchEventsRequest.ProtoReflect.Descriptor instead.
 func (*SearchEventsRequest) Descriptor() ([]byte, []int) {
-	return file_v1_audit_audit_proto_rawDescGZIP(), []int{7}
+	return file_v1_audit_audit_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *SearchEventsRequest) GetActor() string {
@@ -481,7 +551,7 @@ type SearchEventsResponse struct {
 
 func (x *SearchEventsResponse) Reset() {
 	*x = SearchEventsResponse{}
-	mi := &file_v1_audit_audit_proto_msgTypes[8]
+	mi := &file_v1_audit_audit_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -493,7 +563,7 @@ func (x *SearchEventsResponse) String() string {
 func (*SearchEventsResponse) ProtoMessage() {}
 
 func (x *SearchEventsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_v1_audit_audit_proto_msgTypes[8]
+	mi := &file_v1_audit_audit_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -506,7 +576,7 @@ func (x *SearchEventsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SearchEventsResponse.ProtoReflect.Descriptor instead.
 func (*SearchEventsResponse) Descriptor() ([]byte, []int) {
-	return file_v1_audit_audit_proto_rawDescGZIP(), []int{8}
+	return file_v1_audit_audit_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *SearchEventsResponse) GetEvents() []*AuditEvent {
@@ -523,7 +593,10 @@ const file_v1_audit_audit_proto_rawDesc = "" +
 	"\x14v1/audit/audit.proto\x12\baudit.v1\x1a\x18v1/options/options.proto\x1a\x15v1/options/repl.proto\"\x13\n" +
 	"\x11ListActorsRequest\"=\n" +
 	"\x12ListActorsResponse\x12'\n" +
-	"\x06actors\x18\x01 \x03(\v2\x0f.audit.v1.ActorR\x06actors\"/\n" +
+	"\x06actors\x18\x01 \x03(\v2\x0f.audit.v1.ActorR\x06actors\"\x15\n" +
+	"\x13ListEventIdsRequest\"3\n" +
+	"\x14ListEventIdsResponse\x12\x1b\n" +
+	"\tevent_ids\x18\x01 \x03(\tR\beventIds\"/\n" +
 	"\x05Actor\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x12\n" +
 	"\x04type\x18\x02 \x01(\tR\x04type\"4\n" +
@@ -554,26 +627,32 @@ const file_v1_audit_audit_proto_rawDesc = "" +
 	"\aservice\x18\x01 \x01(\tR\aservice\x12\x14\n" +
 	"\x05actor\x18\x02 \x01(\tR\x05actor\",\n" +
 	"\x0fGetEventRequest\x12\x19\n" +
-	"\bevent_id\x18\x01 \x01(\tR\aeventId\"A\n" +
+	"\bevent_id\x18\x01 \x01(\tR\aeventId\"M\n" +
 	"\x13SearchEventsRequest\x12\x14\n" +
-	"\x05actor\x18\x01 \x01(\tR\x05actor\x12\x14\n" +
-	"\x05limit\x18\x02 \x01(\x05R\x05limit\"D\n" +
+	"\x05actor\x18\x01 \x01(\tR\x05actor\x12 \n" +
+	"\x05limit\x18\x02 \x01(\x05B\n" +
+	"\xb2\xbb\x18\x06(\n" +
+	"0d8\x19R\x05limit\"D\n" +
 	"\x14SearchEventsResponse\x12,\n" +
-	"\x06events\x18\x01 \x03(\v2\x14.audit.v1.AuditEventR\x06events2\xef\a\n" +
-	"\fAuditService\x12W\n" +
+	"\x06events\x18\x01 \x03(\v2\x14.audit.v1.AuditEventR\x06events2\xe9\b\n" +
+	"\fAuditService\x12S\n" +
 	"\n" +
-	"ListActors\x12\x1b.audit.v1.ListActorsRequest\x1a\x1c.audit.v1.ListActorsResponse\"\x0e\x80\xb5\x18\x01\xa2\xbb\x18\x06*\x02\b\x050\x01\x12\xcc\x01\n" +
-	"\fStreamEvents\x12\x1d.audit.v1.StreamEventsRequest\x1a\x14.audit.v1.AuditEvent\"\x84\x01\x80\xb5\x18\x01\xa2\xbb\x18|\n" +
-	"\faudit.stream\x12\x18Stream live audit events\x1a\x06stream\x1a\x04tail*D\b\x04\x12\ttimestamp\x12\x05actor\x12\x06action\x12\aservice\x12\vresource_id\x12\vraw_payload\x1a\x03─0\x01\x12\xc6\x02\n" +
-	"\x10StreamUserEvents\x12\x1d.audit.v1.StreamEventsRequest\x1a\x14.audit.v1.AuditEvent\"\xfa\x01\x80\xb5\x18\x01\xa2\xbb\x18\xf1\x01\n" +
+	"ListActors\x12\x1b.audit.v1.ListActorsRequest\x1a\x1c.audit.v1.ListActorsResponse\"\n" +
+	"\xa2\xbb\x18\x06*\x02\b\x050\x01\x12Y\n" +
+	"\fListEventIds\x12\x1d.audit.v1.ListEventIdsRequest\x1a\x1e.audit.v1.ListEventIdsResponse\"\n" +
+	"\xa2\xbb\x18\x06*\x02\b\x050\x01\x12\xbf\x01\n" +
+	"\fStreamEvents\x12\x1d.audit.v1.StreamEventsRequest\x1a\x14.audit.v1.AuditEvent\"x\xa2\xbb\x18t\n" +
+	"\faudit.stream\x12\x18Stream live audit events\x1a\x04tail*D\b\x04\x12\ttimestamp\x12\x05actor\x12\x06action\x12\aservice\x12\vresource_id\x12\vraw_payload\x1a\x03─0\x01\x12\xc2\x02\n" +
+	"\x10StreamUserEvents\x12\x1d.audit.v1.StreamEventsRequest\x1a\x14.audit.v1.AuditEvent\"\xf6\x01\xa2\xbb\x18\xf1\x01\n" +
 	"\x11audit.stream.user\x125Stream events for a specific actor (no SYSTEM events)\"s\n" +
 	"\x05actor\x12 audit.v1.AuditService.ListActors\x1a\x06actors2\x04name:\x0f\n" +
 	"\x04name\x12\x05actor\x18\x10:\x0e\n" +
 	"\x04type\x12\x04type\x18\bB\x0e\n" +
-	"\x04type\x1a\x06systemH\x01R\a  │  *0\b\x04\x12\ttimestamp\x12\x06action\x12\aservice\x12\vresource_id\x1a\x03─0\x01\x12x\n" +
-	"\bGetEvent\x12\x19.audit.v1.GetEventRequest\x1a\x14.audit.v1.AuditEvent\";\x80\xb5\x18\x01\xa2\xbb\x183\n" +
-	"\taudit.get\x12 Fetch a single audit event by ID*\x04\b\x020\x01\x12\xf3\x01\n" +
-	"\fSearchEvents\x12\x1d.audit.v1.SearchEventsRequest\x1a\x1e.audit.v1.SearchEventsResponse\"\xa3\x01\x80\xb5\x18\x01\xa2\xbb\x18\x9a\x01\n" +
+	"\x04type\x1a\x06systemH\x01R\a  │  *0\b\x04\x12\ttimestamp\x12\x06action\x12\aservice\x12\vresource_id\x1a\x03─0\x01\x12\xaf\x01\n" +
+	"\bGetEvent\x12\x19.audit.v1.GetEventRequest\x1a\x14.audit.v1.AuditEvent\"r\xa2\xbb\x18n\n" +
+	"\taudit.get\x12 Fetch a single audit event by ID\"9\n" +
+	"\bevent_id\x12\"audit.v1.AuditService.ListEventIds\x1a\tevent_ids*\x04\b\x020\x01\x12\xef\x01\n" +
+	"\fSearchEvents\x12\x1d.audit.v1.SearchEventsRequest\x1a\x1e.audit.v1.SearchEventsResponse\"\x9f\x01\xa2\xbb\x18\x9a\x01\n" +
 	"\faudit.search\x12\x16Search events by actor\"A\n" +
 	"\x05actor\x12 audit.v1.AuditService.ListActors\x1a\x06actors2\x04nameB\b\n" +
 	"\x04type \x01*/\b\x01\x12\ttimestamp\x12\x05actor\x12\x06action\x12\aservice\x12\bmetadataB$Z\"kvservice/pkg/gen/v1/audit;auditv1b\x06proto3"
@@ -590,37 +669,41 @@ func file_v1_audit_audit_proto_rawDescGZIP() []byte {
 	return file_v1_audit_audit_proto_rawDescData
 }
 
-var file_v1_audit_audit_proto_msgTypes = make([]protoimpl.MessageInfo, 9)
+var file_v1_audit_audit_proto_msgTypes = make([]protoimpl.MessageInfo, 11)
 var file_v1_audit_audit_proto_goTypes = []any{
 	(*ListActorsRequest)(nil),    // 0: audit.v1.ListActorsRequest
 	(*ListActorsResponse)(nil),   // 1: audit.v1.ListActorsResponse
-	(*Actor)(nil),                // 2: audit.v1.Actor
-	(*Action)(nil),               // 3: audit.v1.Action
-	(*AuditEvent)(nil),           // 4: audit.v1.AuditEvent
-	(*StreamEventsRequest)(nil),  // 5: audit.v1.StreamEventsRequest
-	(*GetEventRequest)(nil),      // 6: audit.v1.GetEventRequest
-	(*SearchEventsRequest)(nil),  // 7: audit.v1.SearchEventsRequest
-	(*SearchEventsResponse)(nil), // 8: audit.v1.SearchEventsResponse
+	(*ListEventIdsRequest)(nil),  // 2: audit.v1.ListEventIdsRequest
+	(*ListEventIdsResponse)(nil), // 3: audit.v1.ListEventIdsResponse
+	(*Actor)(nil),                // 4: audit.v1.Actor
+	(*Action)(nil),               // 5: audit.v1.Action
+	(*AuditEvent)(nil),           // 6: audit.v1.AuditEvent
+	(*StreamEventsRequest)(nil),  // 7: audit.v1.StreamEventsRequest
+	(*GetEventRequest)(nil),      // 8: audit.v1.GetEventRequest
+	(*SearchEventsRequest)(nil),  // 9: audit.v1.SearchEventsRequest
+	(*SearchEventsResponse)(nil), // 10: audit.v1.SearchEventsResponse
 }
 var file_v1_audit_audit_proto_depIdxs = []int32{
-	2, // 0: audit.v1.ListActorsResponse.actors:type_name -> audit.v1.Actor
-	3, // 1: audit.v1.AuditEvent.action:type_name -> audit.v1.Action
-	4, // 2: audit.v1.SearchEventsResponse.events:type_name -> audit.v1.AuditEvent
-	0, // 3: audit.v1.AuditService.ListActors:input_type -> audit.v1.ListActorsRequest
-	5, // 4: audit.v1.AuditService.StreamEvents:input_type -> audit.v1.StreamEventsRequest
-	5, // 5: audit.v1.AuditService.StreamUserEvents:input_type -> audit.v1.StreamEventsRequest
-	6, // 6: audit.v1.AuditService.GetEvent:input_type -> audit.v1.GetEventRequest
-	7, // 7: audit.v1.AuditService.SearchEvents:input_type -> audit.v1.SearchEventsRequest
-	1, // 8: audit.v1.AuditService.ListActors:output_type -> audit.v1.ListActorsResponse
-	4, // 9: audit.v1.AuditService.StreamEvents:output_type -> audit.v1.AuditEvent
-	4, // 10: audit.v1.AuditService.StreamUserEvents:output_type -> audit.v1.AuditEvent
-	4, // 11: audit.v1.AuditService.GetEvent:output_type -> audit.v1.AuditEvent
-	8, // 12: audit.v1.AuditService.SearchEvents:output_type -> audit.v1.SearchEventsResponse
-	8, // [8:13] is the sub-list for method output_type
-	3, // [3:8] is the sub-list for method input_type
-	3, // [3:3] is the sub-list for extension type_name
-	3, // [3:3] is the sub-list for extension extendee
-	0, // [0:3] is the sub-list for field type_name
+	4,  // 0: audit.v1.ListActorsResponse.actors:type_name -> audit.v1.Actor
+	5,  // 1: audit.v1.AuditEvent.action:type_name -> audit.v1.Action
+	6,  // 2: audit.v1.SearchEventsResponse.events:type_name -> audit.v1.AuditEvent
+	0,  // 3: audit.v1.AuditService.ListActors:input_type -> audit.v1.ListActorsRequest
+	2,  // 4: audit.v1.AuditService.ListEventIds:input_type -> audit.v1.ListEventIdsRequest
+	7,  // 5: audit.v1.AuditService.StreamEvents:input_type -> audit.v1.StreamEventsRequest
+	7,  // 6: audit.v1.AuditService.StreamUserEvents:input_type -> audit.v1.StreamEventsRequest
+	8,  // 7: audit.v1.AuditService.GetEvent:input_type -> audit.v1.GetEventRequest
+	9,  // 8: audit.v1.AuditService.SearchEvents:input_type -> audit.v1.SearchEventsRequest
+	1,  // 9: audit.v1.AuditService.ListActors:output_type -> audit.v1.ListActorsResponse
+	3,  // 10: audit.v1.AuditService.ListEventIds:output_type -> audit.v1.ListEventIdsResponse
+	6,  // 11: audit.v1.AuditService.StreamEvents:output_type -> audit.v1.AuditEvent
+	6,  // 12: audit.v1.AuditService.StreamUserEvents:output_type -> audit.v1.AuditEvent
+	6,  // 13: audit.v1.AuditService.GetEvent:output_type -> audit.v1.AuditEvent
+	10, // 14: audit.v1.AuditService.SearchEvents:output_type -> audit.v1.SearchEventsResponse
+	9,  // [9:15] is the sub-list for method output_type
+	3,  // [3:9] is the sub-list for method input_type
+	3,  // [3:3] is the sub-list for extension type_name
+	3,  // [3:3] is the sub-list for extension extendee
+	0,  // [0:3] is the sub-list for field type_name
 }
 
 func init() { file_v1_audit_audit_proto_init() }
@@ -634,7 +717,7 @@ func file_v1_audit_audit_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_v1_audit_audit_proto_rawDesc), len(file_v1_audit_audit_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   9,
+			NumMessages:   11,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

@@ -20,6 +20,7 @@ const _ = grpc.SupportPackageIsVersion9
 
 const (
 	AuditService_ListActors_FullMethodName       = "/audit.v1.AuditService/ListActors"
+	AuditService_ListEventIds_FullMethodName     = "/audit.v1.AuditService/ListEventIds"
 	AuditService_StreamEvents_FullMethodName     = "/audit.v1.AuditService/StreamEvents"
 	AuditService_StreamUserEvents_FullMethodName = "/audit.v1.AuditService/StreamUserEvents"
 	AuditService_GetEvent_FullMethodName         = "/audit.v1.AuditService/GetEvent"
@@ -32,34 +33,20 @@ const (
 type AuditServiceClient interface {
 	// ── Bootstrap ─────────────────────────────────────────────────────────────
 	ListActors(ctx context.Context, in *ListActorsRequest, opts ...grpc.CallOption) (*ListActorsResponse, error)
+	// Seeds event_id completion for audit.get
+	ListEventIds(ctx context.Context, in *ListEventIdsRequest, opts ...grpc.CallOption) (*ListEventIdsResponse, error)
 	// ── audit.stream ──────────────────────────────────────────────────────────
-	// Stream all events in real time, filtered optionally by service.
-	//
-	// The stream columns use column_width for tight fixed alignment.
-	// raw_payload renders as a hex string via CELL_BYTES.
-	// internal_id is hidden: true — too noisy for the stream view.
 	StreamEvents(ctx context.Context, in *StreamEventsRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[AuditEvent], error)
 	// ── audit.stream.user ─────────────────────────────────────────────────────
-	// Stream events for a specific actor, excluding SYSTEM events.
-	// Demonstrates: filters neq — SYSTEM actor is excluded from completion.
+	// filters: neq — SYSTEM actor excluded from --actor completion dropdown.
 	StreamUserEvents(ctx context.Context, in *StreamEventsRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[AuditEvent], error)
 	// ── audit.get ─────────────────────────────────────────────────────────────
-	// Fetch a single event by its internal ID (shown in full KV mode).
-	// In KV mode, internal_id IS visible even though hidden:true hides it
-	// from table/stream — hidden only suppresses it from column-based views.
-	//
-	// expand_nested:true inlines the Action sub-message instead of showing
-	// it as a raw JSON blob:
-	//
-	//	action.verb    PUT
-	//	action.target  /api/keys/foo
-	//
-	// Demonstrates: filters present — completion only shows actors that have
-	// at least one recorded event (actor field present on a recent event).
+	// --event_id completion comes from the ListEventIds bootstrap.
+	// expand_nested: true — Action sub-message fields shown as action.verb / action.target.
 	GetEvent(ctx context.Context, in *GetEventRequest, opts ...grpc.CallOption) (*AuditEvent, error)
 	// ── audit.search ──────────────────────────────────────────────────────────
-	// Search events by actor with full metadata column visible.
-	// CELL_JSON renders the metadata map inline.
+	// --limit has int_completion_start/end/step for range tab-completion.
+	// filters: present — completion requires actor.type to be non-empty.
 	SearchEvents(ctx context.Context, in *SearchEventsRequest, opts ...grpc.CallOption) (*SearchEventsResponse, error)
 }
 
@@ -75,6 +62,16 @@ func (c *auditServiceClient) ListActors(ctx context.Context, in *ListActorsReque
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(ListActorsResponse)
 	err := c.cc.Invoke(ctx, AuditService_ListActors_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *auditServiceClient) ListEventIds(ctx context.Context, in *ListEventIdsRequest, opts ...grpc.CallOption) (*ListEventIdsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListEventIdsResponse)
+	err := c.cc.Invoke(ctx, AuditService_ListEventIds_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -145,34 +142,20 @@ func (c *auditServiceClient) SearchEvents(ctx context.Context, in *SearchEventsR
 type AuditServiceServer interface {
 	// ── Bootstrap ─────────────────────────────────────────────────────────────
 	ListActors(context.Context, *ListActorsRequest) (*ListActorsResponse, error)
+	// Seeds event_id completion for audit.get
+	ListEventIds(context.Context, *ListEventIdsRequest) (*ListEventIdsResponse, error)
 	// ── audit.stream ──────────────────────────────────────────────────────────
-	// Stream all events in real time, filtered optionally by service.
-	//
-	// The stream columns use column_width for tight fixed alignment.
-	// raw_payload renders as a hex string via CELL_BYTES.
-	// internal_id is hidden: true — too noisy for the stream view.
 	StreamEvents(*StreamEventsRequest, grpc.ServerStreamingServer[AuditEvent]) error
 	// ── audit.stream.user ─────────────────────────────────────────────────────
-	// Stream events for a specific actor, excluding SYSTEM events.
-	// Demonstrates: filters neq — SYSTEM actor is excluded from completion.
+	// filters: neq — SYSTEM actor excluded from --actor completion dropdown.
 	StreamUserEvents(*StreamEventsRequest, grpc.ServerStreamingServer[AuditEvent]) error
 	// ── audit.get ─────────────────────────────────────────────────────────────
-	// Fetch a single event by its internal ID (shown in full KV mode).
-	// In KV mode, internal_id IS visible even though hidden:true hides it
-	// from table/stream — hidden only suppresses it from column-based views.
-	//
-	// expand_nested:true inlines the Action sub-message instead of showing
-	// it as a raw JSON blob:
-	//
-	//	action.verb    PUT
-	//	action.target  /api/keys/foo
-	//
-	// Demonstrates: filters present — completion only shows actors that have
-	// at least one recorded event (actor field present on a recent event).
+	// --event_id completion comes from the ListEventIds bootstrap.
+	// expand_nested: true — Action sub-message fields shown as action.verb / action.target.
 	GetEvent(context.Context, *GetEventRequest) (*AuditEvent, error)
 	// ── audit.search ──────────────────────────────────────────────────────────
-	// Search events by actor with full metadata column visible.
-	// CELL_JSON renders the metadata map inline.
+	// --limit has int_completion_start/end/step for range tab-completion.
+	// filters: present — completion requires actor.type to be non-empty.
 	SearchEvents(context.Context, *SearchEventsRequest) (*SearchEventsResponse, error)
 	mustEmbedUnimplementedAuditServiceServer()
 }
@@ -186,6 +169,9 @@ type UnimplementedAuditServiceServer struct{}
 
 func (UnimplementedAuditServiceServer) ListActors(context.Context, *ListActorsRequest) (*ListActorsResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ListActors not implemented")
+}
+func (UnimplementedAuditServiceServer) ListEventIds(context.Context, *ListEventIdsRequest) (*ListEventIdsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListEventIds not implemented")
 }
 func (UnimplementedAuditServiceServer) StreamEvents(*StreamEventsRequest, grpc.ServerStreamingServer[AuditEvent]) error {
 	return status.Error(codes.Unimplemented, "method StreamEvents not implemented")
@@ -234,6 +220,24 @@ func _AuditService_ListActors_Handler(srv interface{}, ctx context.Context, dec 
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(AuditServiceServer).ListActors(ctx, req.(*ListActorsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AuditService_ListEventIds_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListEventIdsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AuditServiceServer).ListEventIds(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AuditService_ListEventIds_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AuditServiceServer).ListEventIds(ctx, req.(*ListEventIdsRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -306,6 +310,10 @@ var AuditService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ListActors",
 			Handler:    _AuditService_ListActors_Handler,
+		},
+		{
+			MethodName: "ListEventIds",
+			Handler:    _AuditService_ListEventIds_Handler,
 		},
 		{
 			MethodName: "GetEvent",

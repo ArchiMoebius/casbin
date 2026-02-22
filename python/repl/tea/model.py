@@ -87,16 +87,26 @@ class Model:
         Return the canonical cmd path for `word`, respecting the active
         namespace prefix.
 
-        Resolution order:
-          1. Exact match (absolute path or already-prefixed)
-          2. namespace.prefix + "." + word
+        Resolution order (when namespace is active):
+          1. namespace_prefix + "." + word  (relative — highest priority)
+          2. Absolute path or alias
+
+        At root (no namespace): alias/absolute only.
+
+        Always returns the canonical path (alias → resolved), never the
+        raw alias string.
         """
-        if self.ui_spec.find_cmd(word) is not None:
-            return word
+        # 1. Namespace-prefixed — try first when inside a namespace
         if self.namespace:
             prefixed = self.namespace_prefix() + "." + word
-            if self.ui_spec.find_cmd(prefixed) is not None:
+            if self.ui_spec.commands.get(prefixed) is not None:
                 return prefixed
+
+        # 2. Absolute path or alias
+        canonical = self.ui_spec.alias_map.get(word, word)
+        if self.ui_spec.commands.get(canonical) is not None:
+            return canonical
+
         return None
 
     def headers_dict(self) -> dict[str, str]:

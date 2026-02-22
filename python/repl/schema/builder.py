@@ -4,6 +4,7 @@ repl/schema/builder.py
 UISpecBuilder: reads a GrpcReflectionClient and compiles a UISpec.
 Single Responsibility: descriptor → UISpec only. No I/O, no rendering.
 """
+
 from __future__ import annotations
 
 import json
@@ -13,9 +14,18 @@ from typing import TYPE_CHECKING, Any, Optional
 from google.protobuf.descriptor_pb2 import FieldDescriptorProto
 
 from repl.schema.ui_spec import (
-    CandidateRow, CellRenderer, CmdNode, CompletionDisplayFieldSpec,
-    CompletionFilterSpec, CompletionSource, DisplayMode, DisplaySpec,
-    FieldSpec, FilterOp, REFLECTION_SERVICE, UISpec,
+    CandidateRow,
+    CellRenderer,
+    CmdNode,
+    CompletionDisplayFieldSpec,
+    CompletionFilterSpec,
+    CompletionSource,
+    DisplayMode,
+    DisplaySpec,
+    FieldSpec,
+    FilterOp,
+    REFLECTION_SERVICE,
+    UISpec,
 )
 
 if TYPE_CHECKING:
@@ -24,12 +34,12 @@ if TYPE_CHECKING:
 log = logging.getLogger(__name__)
 
 # Proto extension field numbers (must match repl.proto)
-_METHOD_EXT_NUM  = 50100
+_METHOD_EXT_NUM = 50100
 _MESSAGE_EXT_NUM = 50101
-_FIELD_EXT_NUM   = 50102
-_METHOD_EXT_FQN  = "repl.v1.method_opts"
+_FIELD_EXT_NUM = 50102
+_METHOD_EXT_FQN = "repl.v1.method_opts"
 _MESSAGE_EXT_FQN = "repl.v1.message_opts"
-_FIELD_EXT_FQN   = "repl.v1.field_opts"
+_FIELD_EXT_FQN = "repl.v1.field_opts"
 
 # DisplayMode int → enum
 _DISPLAY_MODE_MAP = {
@@ -98,9 +108,9 @@ class UISpecBuilder:
     """
 
     def build(self, client: Any) -> UISpec:  # client: GrpcReflectionClient
-        services    = client.list_services()
-        commands:   dict[str, CmdNode] = {}
-        alias_map:  dict[str, str]     = {}
+        services = client.list_services()
+        commands: dict[str, CmdNode] = {}
+        alias_map: dict[str, str] = {}
 
         for svc in services:
             try:
@@ -147,8 +157,12 @@ class UISpecBuilder:
                 continue  # No repl.v1.method option → invisible
 
             if node.cmd in commands:
-                log.warning("Duplicate cmd path '%s' — skipping %s.%s",
-                            node.cmd, svc, method_desc.name)
+                log.warning(
+                    "Duplicate cmd path '%s' — skipping %s.%s",
+                    node.cmd,
+                    svc,
+                    method_desc.name,
+                )
                 continue
 
             commands[node.cmd] = node
@@ -165,7 +179,7 @@ class UISpecBuilder:
         svc: str,
         method_desc: Any,
     ) -> Optional[CmdNode]:
-        opts     = method_desc.GetOptions()
+        opts = method_desc.GetOptions()
         repl_opt = _opt_value(opts, _METHOD_EXT_FQN, _METHOD_EXT_NUM)
 
         if repl_opt is None:
@@ -175,9 +189,9 @@ class UISpecBuilder:
         if not cmd:
             return None
 
-        input_fields  = self._build_fields(client, method_desc.input_type)
+        input_fields = self._build_fields(client, method_desc.input_type)
         output_fields = self._build_fields(client, method_desc.output_type)
-        display       = self._build_display(
+        display = self._build_display(
             _msg_field(repl_opt, "display"),
             method_desc.output_type,
             method_desc.server_streaming,
@@ -222,18 +236,24 @@ class UISpecBuilder:
     def _build_field(self, f: Any) -> FieldSpec:
         field_opt = _opt_value(f.GetOptions(), _FIELD_EXT_FQN, _FIELD_EXT_NUM)
 
-        label    = ""
-        hidden   = False
+        label = ""
+        hidden = False
         renderer = CellRenderer.DEFAULT
-        col_w    = 0
+        col_w = 0
+        int_start = 0
+        int_end = 0
+        int_step = 1
 
         if field_opt is not None:
-            label    = _msg_field(field_opt, "label", "")
-            hidden   = _msg_field(field_opt, "hidden", False)
+            label = _msg_field(field_opt, "label", "")
+            hidden = _msg_field(field_opt, "hidden", False)
             renderer = _CELL_RENDERER_MAP.get(
                 int(_msg_field(field_opt, "renderer", 0)), CellRenderer.DEFAULT
             )
             col_w = int(_msg_field(field_opt, "column_width", 0))
+            int_start = int(_msg_field(field_opt, "int_completion_start", 0))
+            int_end = int(_msg_field(field_opt, "int_completion_end", 0))
+            int_step = int(_msg_field(field_opt, "int_completion_step", 1)) or 1
 
         enum_values: tuple[str, ...] = ()
         if f.type == FieldDescriptorProto.TYPE_ENUM and f.enum_type:
@@ -246,15 +266,16 @@ class UISpecBuilder:
         return FieldSpec(
             name=f.name,
             proto_type=f.type,
-            is_repeated=(
-                f.label == FieldDescriptorProto.LABEL_REPEATED
-            ),
+            is_repeated=(f.label == FieldDescriptorProto.LABEL_REPEATED),
             enum_values=enum_values,
             label=label,
             hidden=hidden,
             renderer=renderer,
             column_width=col_w,
             message_type=message_type,
+            int_completion_start=int_start,
+            int_completion_end=int_end,
+            int_completion_step=int_step,
         )
 
     # ──────────────────────────────────────────────────────────────────────
@@ -268,9 +289,9 @@ class UISpecBuilder:
         is_streaming: bool,
     ) -> DisplaySpec:
         # Try message-level default
-        msg_opts      = output_desc.GetOptions()
-        msg_repl_opt  = _opt_value(msg_opts, _MESSAGE_EXT_FQN, _MESSAGE_EXT_NUM)
-        msg_disp_msg  = _msg_field(msg_repl_opt, "display") if msg_repl_opt else None
+        msg_opts = output_desc.GetOptions()
+        msg_repl_opt = _opt_value(msg_opts, _MESSAGE_EXT_FQN, _MESSAGE_EXT_NUM)
+        msg_disp_msg = _msg_field(msg_repl_opt, "display") if msg_repl_opt else None
 
         # Priority: method option > message option > auto-infer
         effective = display_msg or msg_disp_msg
@@ -284,7 +305,8 @@ class UISpecBuilder:
                     columns=_repeated_strings(effective, "columns"),
                     stream_separator=_msg_field(effective, "stream_separator", "─"),
                     title_field=_msg_field(effective, "title_field", None) or None,
-                    success_message=_msg_field(effective, "success_message", "✔") or "✔",
+                    success_message=_msg_field(effective, "success_message", "✔")
+                    or "✔",
                     expand_nested=_msg_field(effective, "expand_nested", False),
                 )
 
@@ -292,8 +314,7 @@ class UISpecBuilder:
         if is_streaming:
             return DisplaySpec(mode=DisplayMode.STREAM)
         has_repeated = any(
-            f.label == FieldDescriptorProto.LABEL_REPEATED
-            for f in output_desc.fields
+            f.label == FieldDescriptorProto.LABEL_REPEATED for f in output_desc.fields
         )
         if has_repeated:
             return DisplaySpec(mode=DisplayMode.TABLE)
@@ -309,8 +330,7 @@ class UISpecBuilder:
             for df in (_msg_field(fc, "display_fields") or [])
         )
         filters = tuple(
-            self._build_filter(f)
-            for f in (_msg_field(fc, "filters") or [])
+            self._build_filter(f) for f in (_msg_field(fc, "filters") or [])
         )
         return CompletionSource(
             field=_msg_field(fc, "field", ""),
@@ -388,7 +408,7 @@ class UISpecBuilder:
         # Single output field: "name" (the service FQN string)
         name_field = FieldSpec(
             name="name",
-            proto_type=9,       # TYPE_STRING
+            proto_type=9,  # TYPE_STRING
             is_repeated=False,
             label="service",
             column_width=60,

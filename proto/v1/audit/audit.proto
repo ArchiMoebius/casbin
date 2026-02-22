@@ -8,16 +8,6 @@ import "v1/options/repl.proto";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // AuditService — immutable append-only event log
-//
-// Demonstrates:
-//   • hidden          — internal_id hidden in stream/table, visible in KV
-//   • CELL_BYTES      — raw_payload renders as hex in table/stream columns
-//   • CELL_JSON       — metadata field renders compact JSON inline
-//   • column_width    — fixed widths for tight stream alignment
-//   • expand_nested   — Action sub-message inlined rather than JSON-blobed
-//   • filters: neq    — audit.stream.user excludes SYSTEM actor events
-//   • filters: present — audit.get completion requires actor to be non-empty
-//   • column_separator — custom "  │  " between stream columns
 // ─────────────────────────────────────────────────────────────────────────────
 
 service AuditService {
@@ -28,130 +18,133 @@ service AuditService {
       bootstrap: true
       display:   { mode: DISPLAY_SILENT }
     };
-    option (options.v1.required_action) = ACTION_GET;
+  }
+
+  // Seeds event_id completion for audit.get
+  rpc ListEventIds(ListEventIdsRequest) returns (ListEventIdsResponse) {
+    option (repl.v1.method_opts) = {
+      bootstrap: true
+      display:   { mode: DISPLAY_SILENT }
+    };
   }
 
   // ── audit.stream ──────────────────────────────────────────────────────────
-  // Stream all events in real time, filtered optionally by service.
-  //
-  // The stream columns use column_width for tight fixed alignment.
-  // raw_payload renders as a hex string via CELL_BYTES.
-  // internal_id is hidden: true — too noisy for the stream view.
   rpc StreamEvents(StreamEventsRequest) returns (stream AuditEvent) {
     option (repl.v1.method_opts) = {
       cmd:         "audit.stream"
       description: "Stream live audit events"
-      aliases:     ["stream", "tail"]
+      aliases:     "tail"
       display: {
         mode:             DISPLAY_STREAM
-        columns:          ["timestamp", "actor", "action", "service", "resource_id", "raw_payload"]
+        columns:          "timestamp"
+        columns:          "actor"
+        columns:          "action"
+        columns:          "service"
+        columns:          "resource_id"
+        columns:          "raw_payload"
         stream_separator: "─"
       }
     };
-    option (options.v1.required_action) = ACTION_GET;
   }
 
   // ── audit.stream.user ─────────────────────────────────────────────────────
-  // Stream events for a specific actor, excluding SYSTEM events.
-  // Demonstrates: filters neq — SYSTEM actor is excluded from completion.
+  // filters: neq — SYSTEM actor excluded from --actor completion dropdown.
   rpc StreamUserEvents(StreamEventsRequest) returns (stream AuditEvent) {
     option (repl.v1.method_opts) = {
       cmd:         "audit.stream.user"
       description: "Stream events for a specific actor (no SYSTEM events)"
-      completions: [{
-        field:        "actor"
-        source_rpc:   "audit.v1.AuditService.ListActors"
-        source_field: "actors"
-        // Exclude the internal SYSTEM actor — human users only in this view
-        filters: [{ field: "type"  neq: "system" }]
-        display_fields: { path: "name"  label: "actor"  width: 16 }
-        display_fields: { path: "type"  label: "type"   width: 8  }
+      completions: {
+        field:            "actor"
+        source_rpc:       "audit.v1.AuditService.ListActors"
+        source_field:     "actors"
+        value_field:      "name"
         show_headers:     true
         column_separator: "  │  "
-        value_field:      "name"
-      }]
+        display_fields: { path: "name"  label: "actor"  width: 16 }
+        display_fields: { path: "type"  label: "type"   width: 8  }
+        filters: { field: "type"  neq: "system" }
+      }
       display: {
         mode:             DISPLAY_STREAM
-        columns:          ["timestamp", "action", "service", "resource_id"]
+        columns:          "timestamp"
+        columns:          "action"
+        columns:          "service"
+        columns:          "resource_id"
         stream_separator: "─"
       }
     };
-    option (options.v1.required_action) = ACTION_GET;
   }
 
   // ── audit.get ─────────────────────────────────────────────────────────────
-  // Fetch a single event by its internal ID (shown in full KV mode).
-  // In KV mode, internal_id IS visible even though hidden:true hides it
-  // from table/stream — hidden only suppresses it from column-based views.
-  //
-  // expand_nested:true inlines the Action sub-message instead of showing
-  // it as a raw JSON blob:
-  //
-  //   action.verb    PUT
-  //   action.target  /api/keys/foo
-  //
-  // Demonstrates: filters present — completion only shows actors that have
-  // at least one recorded event (actor field present on a recent event).
+  // --event_id completion comes from the ListEventIds bootstrap.
+  // expand_nested: true — Action sub-message fields shown as action.verb / action.target.
   rpc GetEvent(GetEventRequest) returns (AuditEvent) {
     option (repl.v1.method_opts) = {
       cmd:         "audit.get"
       description: "Fetch a single audit event by ID"
+      completions: {
+        field:        "event_id"
+        source_rpc:   "audit.v1.AuditService.ListEventIds"
+        source_field: "event_ids"
+      }
       display: {
         mode:          DISPLAY_KV
-        expand_nested: true    // inline Action sub-message fields
+        expand_nested: true
       }
     };
-    option (options.v1.required_action) = ACTION_GET;
   }
 
   // ── audit.search ──────────────────────────────────────────────────────────
-  // Search events by actor with full metadata column visible.
-  // CELL_JSON renders the metadata map inline.
+  // --limit has int_completion_start/end/step for range tab-completion.
+  // filters: present — completion requires actor.type to be non-empty.
   rpc SearchEvents(SearchEventsRequest) returns (SearchEventsResponse) {
     option (repl.v1.method_opts) = {
       cmd:         "audit.search"
       description: "Search events by actor"
-      completions: [{
+      completions: {
         field:        "actor"
         source_rpc:   "audit.v1.AuditService.ListActors"
         source_field: "actors"
         value_field:  "name"
-        filters: [{ field: "type"  present: true }]   // require type to be set
-      }]
+        filters: { field: "type"  present: true }
+      }
       display: {
         mode:    DISPLAY_TABLE
-        columns: ["timestamp", "actor", "action", "service", "metadata"]
+        columns: "timestamp"
+        columns: "actor"
+        columns: "action"
+        columns: "service"
+        columns: "metadata"
       }
     };
-    option (options.v1.required_action) = ACTION_GET;
   }
 }
 
 // ── Messages ──────────────────────────────────────────────────────────────────
 
 message ListActorsRequest  {}
-message ListActorsResponse {
-  repeated Actor actors = 1;
-}
+message ListActorsResponse { repeated Actor actors = 1; }
 
-// Actor is used as a completion candidate row.  The "type" field enables
-// the neq/present filters in stream.user and search.
+// Bootstrap: returns every known event_id for audit.get --event_id <TAB>
+message ListEventIdsRequest  {}
+message ListEventIdsResponse { repeated string event_ids = 1; }
+
+// Actor candidate row. "type" drives neq/present filters.
 message Actor {
-  string name = 1; // the actor identifier, e.g. "alice"
+  string name = 1;
   string type = 2; // "human" | "service" | "system"
 }
 
-// Action sub-message — with expand_nested:true in audit.get, its fields are
-// rendered as "action.verb" and "action.target" rather than a JSON blob.
+// Action sub-message. With expand_nested:true in audit.get renders as:
+//   action.verb    DELETE
+//   action.target  /api/keys/bar
 message Action {
-  string verb   = 1; // e.g. "PUT", "DELETE", "LOGIN"
-  string target = 2; // e.g. "/api/keys/foo"
+  string verb   = 1;
+  string target = 2;
 }
 
 message AuditEvent {
-  // hidden: true means this column is suppressed in DISPLAY_TABLE and
-  // DISPLAY_STREAM views (too wide for a stream row) but still appears
-  // in the DISPLAY_KV view from audit.get.
+  // hidden:true — suppressed in DISPLAY_TABLE/STREAM but visible in DISPLAY_KV.
   string internal_id  = 1 [(repl.v1.field_opts) = { hidden: true }];
 
   int64  timestamp    = 2 [(repl.v1.field_opts) = {
@@ -160,46 +153,27 @@ message AuditEvent {
     column_width: 19
   }];
   string actor        = 3 [(repl.v1.field_opts) = { column_width: 16 }];
-
-  // CELL_JSON renders the inline action verb without escaping:
-  //   action  {"verb":"PUT","target":"/api/keys/foo"}
-  // expand_nested (on the method) overrides this to show sub-fields separately.
-  Action action       = 4 [(repl.v1.field_opts) = {
-    label:    "action"
-    renderer: CELL_JSON
-  }];
-
+  Action action       = 4 [(repl.v1.field_opts) = { label: "action"  renderer: CELL_JSON }];
   string service      = 5 [(repl.v1.field_opts) = { column_width: 24 }];
   string resource_id  = 6 [(repl.v1.field_opts) = { label: "resource"  column_width: 20 }];
-
-  // CELL_BYTES renders the raw binary payload as a hex string:
-  //   raw_payload  61 6c 69 63 65
-  bytes  raw_payload  = 7 [(repl.v1.field_opts) = {
-    label:    "payload"
-    renderer: CELL_BYTES
-    column_width: 20
-  }];
-
-  // CELL_JSON renders the metadata map compactly inline:
-  //   metadata  {"ip":"10.0.0.1","ua":"curl/7.88"}
-  string metadata     = 8 [(repl.v1.field_opts) = {
-    label:    "metadata"
-    renderer: CELL_JSON
-    column_width: 40
-  }];
+  bytes  raw_payload  = 7 [(repl.v1.field_opts) = { label: "payload"  renderer: CELL_BYTES  column_width: 20 }];
+  string metadata     = 8 [(repl.v1.field_opts) = { label: "metadata" renderer: CELL_JSON   column_width: 40 }];
 }
 
 message StreamEventsRequest {
-  string service = 1; // optional filter — empty = all services
-  string actor   = 2; // optional actor filter
+  string service = 1;
+  string actor   = 2;
 }
 
 message GetEventRequest { string event_id = 1; }
 
 message SearchEventsRequest {
   string actor = 1;
-  int32  limit = 2;
+  // int_completion_end > 0 enables tab-completion: 10, 25, 50, 100
+  int32  limit = 2 [(repl.v1.field_opts) = {
+    int_completion_start: 10
+    int_completion_end:   100
+    int_completion_step:  25
+  }];
 }
-message SearchEventsResponse {
-  repeated AuditEvent events = 1;
-}
+message SearchEventsResponse { repeated AuditEvent events = 1; }

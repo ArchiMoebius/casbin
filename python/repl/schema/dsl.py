@@ -4,6 +4,7 @@ repl/schema/dsl.py
 DSL helpers: variable expansion, template rendering, value coercion.
 Pure functions. No I/O.
 """
+
 from __future__ import annotations
 
 import re
@@ -19,13 +20,17 @@ _VAR_RE = re.compile(r"\$\{([^}]+)\}|\$([A-Za-z_][A-Za-z0-9_]*)")
 
 def expand_variables(text: str, variables: dict[str, str]) -> str:
     """Replace $VAR and ${VAR} with values from the variables dict."""
+
     def _replace(m: re.Match) -> str:
         name = m.group(1) or m.group(2)
         return variables.get(name, m.group(0))
+
     return _VAR_RE.sub(_replace, text)
 
 
-def expand_request(request: dict[str, Any], variables: dict[str, str]) -> dict[str, Any]:
+def expand_request(
+    request: dict[str, Any], variables: dict[str, str]
+) -> dict[str, Any]:
     """Recursively expand variables in all string values of a request dict."""
     result: dict[str, Any] = {}
     for k, v in request.items():
@@ -46,12 +51,14 @@ def expand_template(template: str, data: dict[str, Any]) -> str:
     Replace {field_name} tokens in a template with values from data.
     E.g. "✔ {key} = {value}" with {"key": "foo", "value": "bar"} → "✔ foo = bar"
     """
+
     def _replace(m: re.Match) -> str:
         name = m.group(1)
-        val  = data.get(name)
+        val = data.get(name)
         if val is None:
             return m.group(0)
         return str(val)
+
     return re.sub(r"\{([^}]+)\}", _replace, template)
 
 
@@ -63,17 +70,25 @@ def coerce_value(raw_str: str, field: FieldSpec) -> Any:
         return raw_str.strip().lower() not in ("false", "0", "no", "")
 
     if field.proto_type in (
-        FDP.TYPE_INT32, FDP.TYPE_INT64, FDP.TYPE_UINT32, FDP.TYPE_UINT64,
-        FDP.TYPE_SINT32, FDP.TYPE_SINT64, FDP.TYPE_FIXED32, FDP.TYPE_FIXED64,
-        FDP.TYPE_SFIXED32, FDP.TYPE_SFIXED64,
+        FDP.TYPE_INT32,
+        FDP.TYPE_INT64,
+        FDP.TYPE_UINT32,
+        FDP.TYPE_UINT64,
+        FDP.TYPE_SINT32,
+        FDP.TYPE_SINT64,
+        FDP.TYPE_FIXED32,
+        FDP.TYPE_FIXED64,
+        FDP.TYPE_SFIXED32,
+        FDP.TYPE_SFIXED64,
     ):
-        return int(raw_str.strip())
+        return int(raw_str.strip() if raw_str.strip() else 0)
 
     if field.proto_type in (FDP.TYPE_FLOAT, FDP.TYPE_DOUBLE):
-        return float(raw_str.strip())
+        return float(raw_str.strip() if raw_str.strip() else 0)
 
     if field.proto_type == FDP.TYPE_BYTES:
         import base64
+
         return base64.b64decode(raw_str.strip())
 
     if field.proto_type == FDP.TYPE_MESSAGE:
@@ -89,4 +104,5 @@ def coerce_value(raw_str: str, field: FieldSpec) -> Any:
 def proto_type_label(field: FieldSpec) -> str:
     """Human-readable type label for a field, used in wizard prompts."""
     from repl.schema.parser import _proto_type_label
+
     return _proto_type_label(field)

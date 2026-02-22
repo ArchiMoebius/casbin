@@ -50,8 +50,8 @@ service UserService {
         column_separator: "  │  "
         display_fields: { path: "id"       label: "id"       width: 6  }
         display_fields: { path: "username" label: "username" width: 16 }
-        display_fields:{ path: "role"     label: "role"     width: 10 }
-        display_fields:{ path: "active"   label: "✓"        width: 3 renderer: CELL_BOOL_ICON }
+        display_fields:{ path: "role"     label: "role"      width: 10 }
+        display_fields:{ path: "active"   label: "active"    width: 6 renderer: CELL_BOOL_ICON }
       }]
       display: { mode: DISPLAY_KV }
     };

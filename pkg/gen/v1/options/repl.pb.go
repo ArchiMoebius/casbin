@@ -284,13 +284,19 @@ func (x *MessageRepl) GetDisplay() *DisplaySpec {
 // Field-level option
 // ─────────────────────────────────────────────────────
 type FieldRepl struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Label         string                 `protobuf:"bytes,1,opt,name=label,proto3" json:"label,omitempty"`
-	Hidden        bool                   `protobuf:"varint,2,opt,name=hidden,proto3" json:"hidden,omitempty"`
-	Renderer      CellRenderer           `protobuf:"varint,3,opt,name=renderer,proto3,enum=repl.v1.CellRenderer" json:"renderer,omitempty"`
-	ColumnWidth   int32                  `protobuf:"varint,4,opt,name=column_width,json=columnWidth,proto3" json:"column_width,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state       protoimpl.MessageState `protogen:"open.v1"`
+	Label       string                 `protobuf:"bytes,1,opt,name=label,proto3" json:"label,omitempty"`
+	Hidden      bool                   `protobuf:"varint,2,opt,name=hidden,proto3" json:"hidden,omitempty"`
+	Renderer    CellRenderer           `protobuf:"varint,3,opt,name=renderer,proto3,enum=repl.v1.CellRenderer" json:"renderer,omitempty"`
+	ColumnWidth int32                  `protobuf:"varint,4,opt,name=column_width,json=columnWidth,proto3" json:"column_width,omitempty"`
+	// Integer range completion.  When int_completion_end > 0 the REPL generates
+	// candidates [start, start+step, ..., end] for this field on <TAB>.
+	// Example: start=5, end=20, step=5 → 5, 10, 15, 20
+	IntCompletionStart int32 `protobuf:"varint,5,opt,name=int_completion_start,json=intCompletionStart,proto3" json:"int_completion_start,omitempty"`
+	IntCompletionEnd   int32 `protobuf:"varint,6,opt,name=int_completion_end,json=intCompletionEnd,proto3" json:"int_completion_end,omitempty"`
+	IntCompletionStep  int32 `protobuf:"varint,7,opt,name=int_completion_step,json=intCompletionStep,proto3" json:"int_completion_step,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
 }
 
 func (x *FieldRepl) Reset() {
@@ -347,6 +353,27 @@ func (x *FieldRepl) GetRenderer() CellRenderer {
 func (x *FieldRepl) GetColumnWidth() int32 {
 	if x != nil {
 		return x.ColumnWidth
+	}
+	return 0
+}
+
+func (x *FieldRepl) GetIntCompletionStart() int32 {
+	if x != nil {
+		return x.IntCompletionStart
+	}
+	return 0
+}
+
+func (x *FieldRepl) GetIntCompletionEnd() int32 {
+	if x != nil {
+		return x.IntCompletionEnd
+	}
+	return 0
+}
+
+func (x *FieldRepl) GetIntCompletionStep() int32 {
+	if x != nil {
+		return x.IntCompletionStep
 	}
 	return 0
 }
@@ -868,12 +895,15 @@ const file_v1_options_repl_proto_rawDesc = "" +
 	"\tbootstrap\x18\x06 \x01(\bR\tbootstrap\x124\n" +
 	"\x16refresh_after_mutation\x18\a \x01(\bR\x14refreshAfterMutation\"=\n" +
 	"\vMessageRepl\x12.\n" +
-	"\adisplay\x18\x01 \x01(\v2\x14.repl.v1.DisplaySpecR\adisplay\"\x8f\x01\n" +
+	"\adisplay\x18\x01 \x01(\v2\x14.repl.v1.DisplaySpecR\adisplay\"\x9f\x02\n" +
 	"\tFieldRepl\x12\x14\n" +
 	"\x05label\x18\x01 \x01(\tR\x05label\x12\x16\n" +
 	"\x06hidden\x18\x02 \x01(\bR\x06hidden\x121\n" +
 	"\brenderer\x18\x03 \x01(\x0e2\x15.repl.v1.CellRendererR\brenderer\x12!\n" +
-	"\fcolumn_width\x18\x04 \x01(\x05R\vcolumnWidth\"\x90\x03\n" +
+	"\fcolumn_width\x18\x04 \x01(\x05R\vcolumnWidth\x120\n" +
+	"\x14int_completion_start\x18\x05 \x01(\x05R\x12intCompletionStart\x12,\n" +
+	"\x12int_completion_end\x18\x06 \x01(\x05R\x10intCompletionEnd\x12.\n" +
+	"\x13int_completion_step\x18\a \x01(\x05R\x11intCompletionStep\"\x90\x03\n" +
 	"\x0fFieldCompletion\x12\x14\n" +
 	"\x05field\x18\x01 \x01(\tR\x05field\x12\x1d\n" +
 	"\n" +

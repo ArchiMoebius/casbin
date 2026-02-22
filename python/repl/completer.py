@@ -24,10 +24,11 @@ from repl.schema.ui_spec import (
     FieldSpec,
     UISpec,
 )
+from repl.schema.projection import _render_display_cols
 
 
 # ──────────────────────────────────────────────────────────────────────────────
-# Meta-commands — built-ins that always appear in Tab completion.
+# Meta-commands — built-ins that always appear at the right level.
 # Tuples of (name, description, only_when_in_namespace).
 # ──────────────────────────────────────────────────────────────────────────────
 _META_COMMANDS: list[tuple[str, str, bool]] = [
@@ -36,7 +37,6 @@ _META_COMMANDS: list[tuple[str, str, bool]] = [
     ("exit", "Quit the REPL", False),
     ("back", "Return to parent namespace", True),
     ("..", "Return to parent namespace", True),
-    ("services", "List gRPC services (reflection)", False),
 ]
 
 
@@ -47,17 +47,17 @@ class ReplCompleter(Completer):
     Namespace awareness
     ───────────────────
     namespace_fn() returns the active namespace tuple, e.g. ("key",) after
-    `use key`.  The completer uses it in two ways:
+    `use key`.
 
-    1. Command-path completion (empty buffer or partial word):
-       - Strips the active prefix from candidate paths and shows only the
-         *next segment*, so `use key` + Tab shows  get / put / watch  not
-         key.get / key.put / key.watch.
-       - Absolute paths that don't start with the active prefix are still
-         shown so the user can always escape the namespace.
+    Command-path completion:
+      - Always operates in *relative mode* when a namespace is active:
+        strips the prefix and shows only next segments.
+      - Aliases are NEVER shown in the command-path dropdown (they work when
+        typed directly but clutter the menu).
 
-    2. Node resolution (for flag/value completion):
-       - If `words[0]` isn't an absolute command, tries namespace + words[0].
+    live_fetch_fn:
+      Optional callback the runtime provides. Called synchronously before
+      reading from cache when a completion source has live:true.
     """
 
     def __init__(
@@ -65,10 +65,14 @@ class ReplCompleter(Completer):
         ui_spec: UISpec,
         cache: CompletionCache,
         namespace_fn: Callable[[], tuple[str, ...]] = lambda: (),
+        live_fetch_fn: Optional[
+            Callable[[CompletionSource, dict[str, str]], None]
+        ] = None,
     ) -> None:
         self._spec = ui_spec
         self._cache = cache
         self._namespace_fn = namespace_fn
+        self._live_fetch_fn = live_fetch_fn
         self._last_completion_source: Optional[CompletionSource] = None
 
     # ── Public ───────────────────────────────────────────────────────────────
@@ -76,6 +80,10 @@ class ReplCompleter(Completer):
     def get_completions(
         self, document: Document, complete_event: CompleteEvent
     ) -> Iterator[Completion]:
+        # Reset header state on every invocation so it doesn't linger after
+        # a completion is accepted.
+        self._last_completion_source = None
+
         text = document.text_before_cursor
         after_space = text.endswith(" ")
 
@@ -89,16 +97,16 @@ class ReplCompleter(Completer):
             yield from self._complete_cmd_path(words[0] if words else "")
             return
 
-        # ── Meta-command argument completion ────────────────────────────────────
+        # ── `use <arg>` completion ────────────────────────────────────────────
         if words[0] == "use":
-            partial = (
-                words[1]
-                if len(words) == 2 and not after_space
-                else ""
-                if after_space
-                else ""
-            )
+            partial = words[1] if len(words) == 2 and not after_space else ""
             yield from self._complete_use_arg(partial)
+            return
+
+        # ── `help <arg>` completion ───────────────────────────────────────────
+        if words[0] in ("help", "?"):
+            partial = words[1] if len(words) == 2 and not after_space else ""
+            yield from self._complete_help_arg(partial)
             return
 
         # ── Resolve node (namespace-aware) ────────────────────────────────────
@@ -110,26 +118,33 @@ class ReplCompleter(Completer):
 
         last = words[-1]
 
+        # Build a dict of already-typed flag values from the buffer.
+        # Used by live completions to expand ${VAR} in source_request.
+        # e.g. ["config.get", "--env", "dev", "--key"] → {"env": "dev", "ENV": "dev"}
+        typed_flags = _extract_typed_flags(words)
+
         # Case A: "cmd --flag <TAB>" — complete the value
         if after_space and last.startswith("--"):
-            yield from self._complete_value(node, last.lstrip("-"), "")
+            yield from self._complete_value(node, last.lstrip("-"), "", typed_flags)
             return
 
         # Case B: "cmd --flag partial<TAB>" — complete partial value
         if not after_space and not last.startswith("-") and len(words) >= 3:
             prev = words[-2]
             if prev.startswith("--"):
-                yield from self._complete_value(node, prev.lstrip("-"), last)
+                yield from self._complete_value(
+                    node, prev.lstrip("-"), last, typed_flags
+                )
                 return
 
-        # Case C: "cmd --partial<TAB>" — complete flag name, preserve dashes
+        # Case C: "cmd --partial<TAB>" — complete flag name
         if not after_space and last.startswith("-"):
             raw_partial = last
             flag_partial = last.lstrip("-")
             yield from self._complete_flags(node, words, raw_partial, flag_partial)
             return
 
-        # Case D: "cmd <TAB>" after a completed value, or just after cmd
+        # Case D: "cmd <TAB>" — show remaining flags
         yield from self._complete_flags(node, words, "", "")
 
     def current_completion_source(
@@ -144,95 +159,93 @@ class ReplCompleter(Completer):
         return ".".join(ns) if ns else ""
 
     def _resolve_node(self, word: str) -> Optional[CmdNode]:
-        """Find the CmdNode for word, trying absolute then namespace-prefixed."""
-        node = self._spec.find_cmd(word)
-        if node:
-            return node
+        """
+        Find the CmdNode for word.
+        Namespace-prefixed tried first (mirrors model.resolve_cmd).
+        """
         prefix = self._active_prefix()
         if prefix:
             node = self._spec.find_cmd(f"{prefix}.{word}")
-        return node
+            if node:
+                return node
+        # Absolute path or alias
+        return self._spec.find_cmd(word)
 
     # ── Command-path completion ───────────────────────────────────────────────
 
     def _complete_cmd_path(self, partial: str) -> Iterator[Completion]:
         """
-        Emit command completions, relativized to the active namespace.
+        Emit command completions scoped to the active namespace.
 
-        With no namespace:
-          ""    → top-level segments: "key" (3 commands), "services"
-          "key" → namespace entry "key"
-          "key."→ leaves: "key.get", "key.put", …
+        Rules:
+          • When namespace is active:  always relative mode.
+            - partial=""  → next segments under ns prefix
+            - partial="g" → segments under ns prefix that start with "g"
+          • At root with partial="":   top-level segments only.
+          • At root with partial="ke": segments matching "ke…"
 
-        With namespace ("key",):
-          ""    → next segments relative to "key.": get, put, watch
-          "g"   → filtered: get
-          If partial contains "." or starts an absolute path not under
-          the namespace, fall back to absolute resolution so the user can
-          always escape.
+        Aliases are NEVER emitted here. They resolve silently on Enter.
         """
         prefix = self._active_prefix()
         seen: set[str] = set()
 
-        if prefix and not partial:
-            # ── Relative mode: show next segments under active namespace ──────
+        if prefix:
+            # ── Relative mode: scoped to active namespace ──────────────────
             ns_dot = prefix + "."
-            for cmd, node in self._spec.commands.items():
+            for cmd in sorted(self._spec.commands):
+                node = self._spec.commands[cmd]
                 if node.bootstrap or not cmd.startswith(ns_dot):
                     continue
-                remainder = cmd[len(ns_dot) :]  # e.g. "get" or "search.regex"
-                next_seg = remainder.split(".")[0]  # e.g. "get" or "search"
-                if next_seg in seen:
+                remainder = cmd[len(ns_dot) :]  # e.g. "get", "get.active"
+                if not remainder.startswith(partial):
                     continue
-                seen.add(next_seg)
+                # Next segment after partial
+                suffix = remainder[len(partial) :]  # e.g. "" / "et" / "t.active"
+                next_seg = suffix.split(".")[0]  # e.g. "" / "et" / "t"
+                full_seg = partial + next_seg  # e.g. "g"→"get"
+                if not next_seg or full_seg in seen:
+                    continue
+                seen.add(full_seg)
 
-                # Is this a namespace (multiple commands) or a leaf?
+                # Count sub-commands at this segment
+                full_path = ns_dot + full_seg
                 sub = [
-                    c
-                    for k, c in self._spec.commands.items()
-                    if k.startswith(ns_dot + next_seg) and not c.bootstrap
+                    k
+                    for k in self._spec.commands
+                    if k.startswith(full_path) and not self._spec.commands[k].bootstrap
                 ]
-                if len(sub) > 1:
-                    meta = f"{len(sub)} commands"
+                # If exactly 1 and its path == full_path, it's a leaf
+                is_leaf = len(sub) == 1 and sub[0] == full_path
+                if len(sub) > 1 or not is_leaf:
+                    # namespace or leaf — determine display
+                    has_children = any(
+                        k.startswith(full_path + ".")
+                        for k in self._spec.commands
+                        if not self._spec.commands[k].bootstrap
+                    )
+                    if has_children and len(sub) > 1:
+                        meta = f"{len(sub)} commands"
+                    else:
+                        meta = node.description[:40] if node.description else ""
                 else:
                     meta = node.description[:40] if node.description else ""
 
                 yield Completion(
-                    text=next_seg,
+                    text=next_seg,  # suffix to append to what's typed
                     start_position=0,
-                    display=FormattedText([("class:completion-cmd", next_seg)]),
+                    display=FormattedText([("class:completion-cmd", full_seg)]),
                     display_meta=meta,
                 )
-            # Also show aliases that resolve into this namespace
-            for alias, canonical in self._spec.alias_map.items():
-                if alias in seen:
-                    continue
-                node = self._spec.find_cmd(canonical)
-                if node and not node.bootstrap and canonical.startswith(ns_dot):
-                    seen.add(alias)
-                    yield Completion(
-                        text=alias,
-                        start_position=0,
-                        display=FormattedText(
-                            [
-                                ("class:completion-alias", alias),
-                                ("class:completion-sep", "  "),
-                                (
-                                    "class:completion-meta",
-                                    f"→ {canonical[len(ns_dot) :]}",
-                                ),
-                            ]
-                        ),
-                    )
-            # Meta-commands (back, .., use, help, exit) always visible
-            yield from self._complete_meta("", seen)
+            yield from self._complete_meta(partial, seen)
             return
 
-        # ── Absolute / partial mode (no namespace, or partial has content) ────
+        # ── Root mode ────────────────────────────────────────────────────────
+        # No aliases; only top-level segments (or their matching sub-segments
+        # when partial contains a ".").
         show_full = "." in partial
-        candidates: list[tuple[str, str, str]] = []
 
-        for cmd, node in self._spec.commands.items():
+        for cmd in sorted(self._spec.commands):
+            node = self._spec.commands[cmd]
             if node.bootstrap or not cmd.startswith(partial):
                 continue
 
@@ -254,93 +267,49 @@ class ReplCompleter(Completer):
 
             if insert not in seen:
                 seen.add(insert)
-                candidates.append((insert, display, meta))
+                yield Completion(
+                    text=insert,
+                    start_position=0,
+                    display=FormattedText([("class:completion-cmd", display)]),
+                    display_meta=meta,
+                )
 
-        candidates.sort(key=lambda t: (0 if "." not in t[0] else 1, t[1]))
-        for insert, display, meta in candidates:
-            yield Completion(
-                text=insert,
-                start_position=0,
-                display=FormattedText([("class:completion-cmd", display)]),
-                display_meta=meta,
-            )
-
-        # Aliases
-        for alias, canonical in self._spec.alias_map.items():
-            if not alias.startswith(partial) or alias in seen:
-                continue
-            node = self._spec.find_cmd(canonical)
-            if node is None or node.bootstrap:
-                continue
-            seen.add(alias)
-            yield Completion(
-                text=alias[len(partial) :],
-                start_position=0,
-                display=FormattedText(
-                    [
-                        ("class:completion-alias", alias),
-                        ("class:completion-sep", "  "),
-                        ("class:completion-meta", f"→ {canonical}"),
-                    ]
-                ),
-                display_meta=node.description[:30] if node.description else "",
-            )
-
-        # Meta-commands (use, help, exit, back, …)
+        # Meta-commands (use, help, exit) — NO aliases
         yield from self._complete_meta(partial, seen)
 
     # ── use <arg> completion ─────────────────────────────────────────────────
 
     def _complete_use_arg(self, partial: str) -> Iterator[Completion]:
         """
-        Complete the argument to `use`, yielding only *namespace segments*
-        (dot-path prefixes that have at least one sub-command beneath them).
-        Bare leaf commands (key.get) are not valid `use` targets.
-
-        With namespace ("key",) active and partial "":
-          Scans commands starting with "key."
-          "key.get"          → next_seg="get"   → full_path="key.get"
-                                no commands under "key.get." → skip (leaf)
-          "key.search.regex" → next_seg="search" → "key.search.*" → 2 cmds → yield
-          "key.search.fuzzy" → next_seg="search" → already seen → skip
-
-        With no namespace and partial "":
-          "key.get" → next_seg="key" → "key.*" → 4 cmds → yield
-          "services"→ next_seg="services" → "services.*" → 0 → skip (leaf)
+        Yield only namespace segments (paths with sub-commands beneath them).
+        Leaf commands are not valid `use` targets.
         """
-        active = self._active_prefix()  # e.g. "key" or ""
+        active = self._active_prefix()
         scan_prefix = (active + ".") if active else ""
         seen: set[str] = set()
 
-        for cmd, node in self._spec.commands.items():
+        for cmd in self._spec.commands:
+            node = self._spec.commands[cmd]
             if node.bootstrap:
                 continue
-            # Command must sit under the active namespace
             if scan_prefix and not cmd.startswith(scan_prefix):
                 continue
-            # Strip namespace prefix to get the relative path
-            rel = cmd[len(scan_prefix) :]  # e.g. "get", "search.regex"
-            # Filter by what the user has typed so far
+            rel = cmd[len(scan_prefix) :]
             if not rel.startswith(partial):
                 continue
-            # Extract the next segment after partial
-            after = rel[len(partial) :]  # e.g. "", ".regex", "earch.regex"
-            seg = after.split(".")[0]  # first sub-segment
-            insert = partial + seg  # full segment (may include partial)
+            after = rel[len(partial) :]
+            seg = after.split(".")[0]
+            insert = partial + seg
             if not seg or insert in seen:
                 continue
-            # Only yield if this segment is a *namespace* — i.e. there is at
-            # least one command whose path continues past this segment.
             full_path = scan_prefix + insert
             has_children = any(
                 c.startswith(full_path + ".") and not self._spec.commands[c].bootstrap
                 for c in self._spec.commands
             )
             if not has_children:
-                continue  # leaf — not a valid `use` target
+                continue
             seen.add(insert)
-
-            # Count sub-commands for display_meta
             sub_count = sum(
                 1
                 for c in self._spec.commands
@@ -349,20 +318,53 @@ class ReplCompleter(Completer):
             )
             meta = f"{sub_count} command{'s' if sub_count != 1 else ''}"
             yield Completion(
-                text=seg,  # only the suffix after what's typed
+                text=seg,
                 start_position=0,
                 display=FormattedText([("class:completion-cmd", insert)]),
                 display_meta=meta,
             )
 
-        # ── Meta-command completion ──────────────────────────────────────────────
+    # ── help <arg> completion ─────────────────────────────────────────────────
+
+    def _complete_help_arg(self, partial: str) -> Iterator[Completion]:
+        """
+        Yield commands (leaf and namespace) visible from current namespace
+        that match `partial`.  Mirrors _complete_cmd_path but emits both
+        leaves and namespaces.
+        """
+        prefix = self._active_prefix()
+        seen: set[str] = set()
+        ns_dot = (prefix + ".") if prefix else ""
+
+        for cmd in sorted(self._spec.commands):
+            node = self._spec.commands[cmd]
+            if node.bootstrap:
+                continue
+            if ns_dot and not cmd.startswith(ns_dot):
+                continue
+            rel = cmd[len(ns_dot) :]
+            if not rel.startswith(partial):
+                continue
+            suffix = rel[len(partial) :]
+            next_seg = suffix.split(".")[0]
+            full_seg = partial + next_seg
+            if not next_seg and full_seg not in seen:
+                # exact match
+                full_seg = rel
+            if full_seg in seen:
+                continue
+            seen.add(full_seg)
+            meta = node.description[:40] if node.description else ""
+            yield Completion(
+                text=next_seg or full_seg[len(partial) :],
+                start_position=0,
+                display=FormattedText([("class:completion-cmd", full_seg)]),
+                display_meta=meta,
+            )
+
+    # ── Meta-command completion ───────────────────────────────────────────────
 
     def _complete_meta(self, partial: str, seen: set[str]) -> Iterator[Completion]:
-        """
-        Yield built-in meta-commands (use, help, exit, back, ..) filtered by
-        `partial` and de-duped against `seen`.  Namespace-only commands (back,
-        ..) are suppressed when at the root.
-        """
         in_ns = bool(self._namespace_fn())
         for name, description, ns_only in _META_COMMANDS:
             if ns_only and not in_ns:
@@ -379,26 +381,15 @@ class ReplCompleter(Completer):
                 display_meta=description,
             )
 
-        # ── Flag name completion ──────────────────────────────────────────────────
+    # ── Flag name completion ──────────────────────────────────────────────────
 
     def _complete_flags(
         self,
         node: CmdNode,
         words: list[str],
-        raw_partial: str,  # typed text including dashes, e.g. "--k"
-        flag_partial: str,  # just the name part, e.g. "k"
+        raw_partial: str,
+        flag_partial: str,
     ) -> Iterator[Completion]:
-        """
-        Yield --flag completions.
-
-        `text` is always the full "--name" string.
-        `start_position` is negative by len(raw_partial) so the dashes already
-        typed are replaced cleanly:
-
-          buffer "cmd "    → start=0,  inserts "--key"   → "cmd --key"
-          buffer "cmd --"  → start=-2, inserts "--key"   → "cmd --key"
-          buffer "cmd --k" → start=-3, inserts "--key"   → "cmd --key"
-        """
         used: set[str] = {
             w.lstrip("-") for w in words[1:] if w.startswith("--") and w != raw_partial
         }
@@ -420,39 +411,78 @@ class ReplCompleter(Completer):
     # ── Flag value completion ─────────────────────────────────────────────────
 
     def _complete_value(
-        self, node: CmdNode, field_name: str, partial: str
+        self,
+        node: CmdNode,
+        field_name: str,
+        partial: str,
+        typed_flags: dict[str, str] | None = None,
     ) -> Iterator[Completion]:
         field = next((f for f in node.input_fields if f.name == field_name), None)
         if field is None:
-            self._last_completion_source = None
             return
 
         # Enum
         if field.enum_values:
-            self._last_completion_source = None
             for v in field.enum_values:
                 if v.startswith(partial):
-                    yield Completion(
-                        text=v[len(partial) :], start_position=0, display=v
-                    )
+                    yield Completion(v[len(partial) :], start_position=0, display=v)
             return
 
         # Bool
         if field.proto_type == FieldDescriptorProto.TYPE_BOOL:
-            self._last_completion_source = None
             for v in ("true", "false"):
                 if v.startswith(partial):
                     yield Completion(v[len(partial) :], start_position=0)
             return
 
+        # Integer range — show values only, no meta clutter
+        if field.int_completion_end > 0:
+            start = field.int_completion_start
+            end = field.int_completion_end
+            step = field.int_completion_step or 1
+            for v in range(start, end + 1, step):
+                sv = str(v)
+                if sv.startswith(partial):
+                    yield Completion(sv[len(partial) :], start_position=0, display=sv)
+            return
+
         # RPC-backed
         comp_src = node.completion_for_field(field_name)
         if comp_src is None:
-            self._last_completion_source = None
             return
 
+        # Live: re-fetch synchronously before reading cache.
+        # Pass typed_flags so ${ENV} can expand from --env dev in the buffer.
+        if comp_src.live and self._live_fetch_fn:
+            self._live_fetch_fn(comp_src, typed_flags or {})
+
         self._last_completion_source = comp_src
-        for row in self._cache.get(comp_src.source_rpc):
+
+        # Re-apply this command's filters at read time.
+        # The cache may have been populated by a different command sharing the
+        # same source_rpc (e.g. user.get vs user.get.active) without these filters.
+        rows = self._cache.get(comp_src.source_rpc)
+        if comp_src.filters:
+            rows = tuple(
+                r for r in rows if all(f.test(r.raw) for f in comp_src.filters)
+            )
+
+        # Re-project display_cols using THIS command's display_fields.
+        # The cache rows were projected when they were stored — using whichever
+        # command first populated the cache.  A command with different display_fields
+        # (e.g. user.get.active has 3 cols; user.get has 4) would otherwise render
+        # the wrong columns.  Re-projecting from row.raw is cheap and always correct.
+        if comp_src.display_fields:
+            rows = tuple(
+                CandidateRow(
+                    insert_value=r.insert_value,
+                    display_cols=_render_display_cols(r.raw, comp_src.display_fields),
+                    raw=r.raw,
+                )
+                for r in rows
+            )
+
+        for row in rows:
             if not row.insert_value.startswith(partial):
                 continue
             yield Completion(
@@ -506,6 +536,13 @@ def _render_candidate_row(row: CandidateRow, separator: str = "  ") -> Formatted
 
 
 def _render_header_row(source: CompletionSource) -> FormattedText:
+    """
+    Render the header row for a multi-column completion dropdown.
+
+    Always uses plain text for headers — never a renderer icon.
+    If df.label is set to an icon character (non-ASCII, single glyph) rather
+    than a real column name, fall back to df.path so the header stays readable.
+    """
     parts: list[tuple[str, str]] = []
     sep = source.column_separator or "  "
     for i, df in enumerate(source.display_fields):
@@ -521,3 +558,30 @@ def _type_label(field: FieldSpec) -> str:
     from repl.schema.parser import _proto_type_label
 
     return _proto_type_label(field)
+
+
+def _extract_typed_flags(words: list[str]) -> dict[str, str]:
+    """
+    Scan words for --flag value pairs already typed in the buffer.
+    Returns a dict with both the original name and its uppercase variant so
+    source_request templates like '{"env":"${ENV}"}' expand correctly when
+    the user has typed --env dev.
+
+    Example:
+      ["config.get", "--env", "dev", "--key"]
+      → {"env": "dev", "ENV": "dev"}
+    """
+    result: dict[str, str] = {}
+    i = 1  # skip command word
+    while i < len(words) - 1:
+        w = words[i]
+        if w.startswith("--"):
+            name = w.lstrip("-")
+            value = words[i + 1]
+            if not value.startswith("-"):
+                result[name] = value
+                result[name.upper()] = value
+                i += 2
+                continue
+        i += 1
+    return result

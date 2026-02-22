@@ -47,13 +47,20 @@ repl_style = Style.from_dict(
 )
 
 
-def build_key_bindings(completer=None) -> KeyBindings:
+def build_key_bindings(
+    completer=None,
+    is_streaming_fn=None,
+    cancel_fn=None,
+) -> KeyBindings:
     kb = KeyBindings()
 
     @kb.add("c-c")
     def _interrupt(event):
-        """Ctrl-C: cancel stream or clear line."""
-        event.app.current_buffer.reset()
+        """Ctrl-C: cancel an active stream, or clear the input line."""
+        if is_streaming_fn and is_streaming_fn() and cancel_fn:
+            cancel_fn()
+        else:
+            event.app.current_buffer.reset()
 
     @kb.add("tab")
     def _tab(event):
@@ -77,8 +84,8 @@ def build_key_bindings(completer=None) -> KeyBindings:
     def _help(event):
         """F1: submit 'help' for the command currently being typed."""
         buf = event.app.current_buffer
-        word = buf.text.split()[0] if buf.text.strip() else ""
-        buf.set_text(f"help {word}".strip())
+        word = buf.text.split(" ")[0] if buf and buf.text.strip() else ""
+        buf.text = f"help {word}".strip()
         buf.validate_and_handle()
 
     return kb

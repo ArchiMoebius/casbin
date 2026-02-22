@@ -4,6 +4,7 @@ repl/schema/projection.py
 Pure projection engine: raw RPC response + CompletionSource → CandidateRow[].
 No I/O. No grpc. No prompt_toolkit.
 """
+
 from __future__ import annotations
 
 import json
@@ -11,14 +12,18 @@ from datetime import datetime
 from typing import Any, Optional
 
 from repl.schema.ui_spec import (
-    CandidateRow, CellRenderer, CompletionDisplayFieldSpec,
-    CompletionSource, FieldSpec,
+    CandidateRow,
+    CellRenderer,
+    CompletionDisplayFieldSpec,
+    CompletionSource,
+    FieldSpec,
 )
 
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Public API
 # ──────────────────────────────────────────────────────────────────────────────
+
 
 def project_candidates(
     response: dict,
@@ -68,7 +73,7 @@ def project_candidates(
     rows: list[CandidateRow] = []
     for item in items:
         insert = _resolve_insert(item, source.value_field, is_scalar)
-        cols   = _render_display_cols(item, disp_specs)
+        cols = _render_display_cols(item, disp_specs)
         rows.append(CandidateRow(insert_value=insert, display_cols=cols, raw=item))
 
     return tuple(rows)
@@ -77,6 +82,7 @@ def project_candidates(
 # ──────────────────────────────────────────────────────────────────────────────
 # Dot-path traversal
 # ──────────────────────────────────────────────────────────────────────────────
+
 
 def resolve_path(obj: Any, path: str) -> Any:
     """
@@ -89,8 +95,8 @@ def resolve_path(obj: Any, path: str) -> Any:
         return obj
 
     parts = path.split(".", 1)
-    head  = parts[0]
-    tail  = parts[1] if len(parts) > 1 else ""
+    head = parts[0]
+    tail = parts[1] if len(parts) > 1 else ""
 
     if isinstance(obj, dict):
         child = obj.get(head)
@@ -108,6 +114,7 @@ def resolve_path(obj: Any, path: str) -> Any:
 # ──────────────────────────────────────────────────────────────────────────────
 # Cell rendering
 # ──────────────────────────────────────────────────────────────────────────────
+
 
 def cell_value(raw: Any, renderer: CellRenderer = CellRenderer.DEFAULT) -> str:
     if raw is None:
@@ -144,6 +151,7 @@ def cell_value(raw: Any, renderer: CellRenderer = CellRenderer.DEFAULT) -> str:
 # ──────────────────────────────────────────────────────────────────────────────
 # Internals
 # ──────────────────────────────────────────────────────────────────────────────
+
 
 def _resolve_insert(item: dict, value_field: Optional[str], is_scalar: bool) -> str:
     if is_scalar:

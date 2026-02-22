@@ -95,26 +95,75 @@ def view_stream_header(node: Optional[CmdNode]) -> Optional[str]:
 def view_help(ui_spec: UISpec, prefix: str = "") -> str:
     cmds = ui_spec.user_commands()
     if prefix:
-        cmds = [c for c in cmds if c.cmd.startswith(prefix)]
+        cmds = [c for c in cmds if c.cmd == prefix or c.cmd.startswith(prefix + ".")]
 
     if not cmds:
         return f"  No commands matching '{prefix}'."
 
+    # Single exact command match → show detailed argparse-style help
+    if len(cmds) == 1 and cmds[0].cmd == prefix:
+        return _render_cmd_detail(cmds[0])
+
+    # Multiple commands → tree listing
     lines = ["  Commands:\n"]
     max_cmd = max(len(c.cmd) for c in cmds)
 
     for node in sorted(cmds, key=lambda n: n.cmd):
         aliases = f"  ({', '.join(node.aliases)})" if node.aliases else ""
-        flags = "  ".join(f"--{f.name}" for f in node.input_fields if not f.hidden)
         stream = " [streaming]" if node.server_streaming else ""
         lines.append(
             f"  {node.cmd:<{max_cmd}}  {aliases:<20}{node.description or ''}{stream}"
         )
+        # Show flags inline
+        flags = [f"--{f.name}" for f in node.input_fields if not f.hidden]
         if flags:
-            lines.append(f"  {'':>{max_cmd}}  flags: {flags}")
+            lines.append(f"  {'':>{max_cmd}}  flags: {'  '.join(flags)}")
         lines.append("")
 
     return "\n".join(lines)
+
+
+def _render_cmd_detail(node: CmdNode) -> str:
+    """Argparse-style detail for a single command."""
+    from repl.schema.parser import CmdParser, _proto_type_label
+
+    lines = [
+        f"  {node.cmd}",
+        f"  {'─' * len(node.cmd)}",
+        f"  {node.description}" if node.description else "",
+        "",
+    ]
+    if node.aliases:
+        lines.append(f"  aliases:  {', '.join(node.aliases)}")
+        lines.append("")
+    if node.server_streaming:
+        lines.append("  [server-streaming]")
+        lines.append("")
+
+    visible = [f for f in node.input_fields if not f.hidden]
+    if visible:
+        lines.append("  Flags:")
+        max_flag = max(len(f.name) for f in visible)
+        for f in visible:
+            type_label = _proto_type_label(f)
+            comp = "  (tab-complete)" if node.completion_for_field(f.name) else ""
+            int_hint = ""
+            if f.int_completion_end > 0:
+                int_hint = (
+                    f"  [{f.int_completion_start}…{f.int_completion_end}"
+                    f" step {f.int_completion_step}]"
+                )
+            lines.append(f"    --{f.name:<{max_flag}}  <{type_label}>{comp}{int_hint}")
+        lines.append("")
+
+    if node.output_fields:
+        visible_out = [f for f in node.output_fields if not f.hidden]
+        lines.append("  Output fields:")
+        for f in visible_out:
+            lines.append(f"    {f.display_label()}")
+        lines.append("")
+
+    return "\n".join(l for l in lines if l is not None)
 
 
 def view_error(msg: str) -> str:

@@ -4,13 +4,13 @@ repl/schema/ui_spec.py
 All frozen dataclasses that describe the compiled UI specification.
 Nothing in this module imports grpc, prompt_toolkit, or any I/O library.
 """
+
 from __future__ import annotations
 
 import json
 from dataclasses import dataclass, field
 from enum import Enum, auto
 from typing import Any, Optional, Union
-
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -23,60 +23,67 @@ REFLECTION_SERVICE = "__reflection__"
 # Enums (mirror repl.proto)
 # ──────────────────────────────────────────────────────────────────────────────
 
+
 class DisplayMode(Enum):
-    AUTO   = 0
-    TABLE  = 1
-    KV     = 2
-    JSON   = 3
+    AUTO = 0
+    TABLE = 1
+    KV = 2
+    JSON = 3
     STREAM = 4
     SILENT = 5
-    RAW    = 6
+    RAW = 6
 
 
 class CellRenderer(Enum):
-    DEFAULT   = 0
+    DEFAULT = 0
     TIMESTAMP = 1
-    BYTES     = 2
+    BYTES = 2
     BOOL_ICON = 3
-    JSON      = 4
+    JSON = 4
 
 
 class FilterOp(Enum):
-    EQ      = "eq"
-    NEQ     = "neq"
+    EQ = "eq"
+    NEQ = "neq"
     PRESENT = "present"
-    IN_SET  = "in_set"
+    IN_SET = "in_set"
 
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Display
 # ──────────────────────────────────────────────────────────────────────────────
 
+
 @dataclass(frozen=True)
 class DisplaySpec:
-    mode:             DisplayMode         = DisplayMode.AUTO
-    columns:          tuple[str, ...]     = ()
-    stream_separator: str                 = "─"
-    title_field:      Optional[str]       = None
-    success_message:  str                 = "✔"
-    expand_nested:    bool                = False
+    mode: DisplayMode = DisplayMode.AUTO
+    columns: tuple[str, ...] = ()
+    stream_separator: str = "─"
+    title_field: Optional[str] = None
+    success_message: str = "✔"
+    expand_nested: bool = False
 
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Field
 # ──────────────────────────────────────────────────────────────────────────────
 
+
 @dataclass(frozen=True)
 class FieldSpec:
-    name:         str
-    proto_type:   int                  # FieldDescriptorProto.TYPE_*
-    is_repeated:  bool                 = False
-    enum_values:  tuple[str, ...]      = ()
-    label:        str                  = ""
-    hidden:       bool                 = False
-    renderer:     CellRenderer         = CellRenderer.DEFAULT
-    column_width: int                  = 0
-    message_type: Optional[str]        = None  # fqn for TYPE_MESSAGE fields
+    name: str
+    proto_type: int  # FieldDescriptorProto.TYPE_*
+    is_repeated: bool = False
+    enum_values: tuple[str, ...] = ()
+    label: str = ""
+    hidden: bool = False
+    renderer: CellRenderer = CellRenderer.DEFAULT
+    column_width: int = 0
+    message_type: Optional[str] = None  # fqn for TYPE_MESSAGE fields
+    # Integer range completion (int_completion_end > 0 enables it)
+    int_completion_start: int = 0
+    int_completion_end: int = 0
+    int_completion_step: int = 1
 
     def display_label(self) -> str:
         return self.label or self.name
@@ -86,14 +93,15 @@ class FieldSpec:
 # Completion
 # ──────────────────────────────────────────────────────────────────────────────
 
+
 @dataclass(frozen=True)
 class CompletionDisplayFieldSpec:
-    path:           str
-    label:          str                = ""
-    width:          int                = 0
-    renderer:       CellRenderer       = CellRenderer.DEFAULT
-    join_separator: str                = ", "
-    style:          str                = "class:completion-meta"
+    path: str
+    label: str = ""
+    width: int = 0
+    renderer: CellRenderer = CellRenderer.DEFAULT
+    join_separator: str = ", "
+    style: str = "class:completion-meta"
 
     def display_label(self) -> str:
         return self.label or self.path.split(".")[-1]
@@ -102,12 +110,20 @@ class CompletionDisplayFieldSpec:
 @dataclass(frozen=True)
 class CompletionFilterSpec:
     field: str
-    op:    FilterOp
+    op: FilterOp
     value: Union[str, tuple[str, ...], None]  # None for PRESENT
 
     def test(self, candidate: dict) -> bool:
         from repl.schema.projection import resolve_path
-        actual = str(resolve_path(candidate, self.field) or "")
+
+        raw = resolve_path(candidate, self.field)
+        # Normalise Python booleans so "true"/"false" filter strings match.
+        if raw is None:
+            actual = ""
+        elif isinstance(raw, bool):
+            actual = str(raw).lower()  # True→"true", False→"false"
+        else:
+            actual = str(raw)
         if self.op == FilterOp.EQ:
             return actual == self.value
         if self.op == FilterOp.NEQ:
@@ -121,38 +137,39 @@ class CompletionFilterSpec:
 
 @dataclass(frozen=True)
 class CompletionSource:
-    field:            str
-    source_rpc:       str
-    source_field:     str
-    source_request:   str                               = "{}"
-    live:             bool                              = False
+    field: str
+    source_rpc: str
+    source_field: str
+    source_request: str = "{}"
+    live: bool = False
     # Projection
-    value_field:      Optional[str]                     = None
-    display_fields:   tuple[CompletionDisplayFieldSpec, ...] = ()
-    filters:          tuple[CompletionFilterSpec, ...]  = ()
-    show_headers:     bool                              = False
-    column_separator: str                               = "  "
+    value_field: Optional[str] = None
+    display_fields: tuple[CompletionDisplayFieldSpec, ...] = ()
+    filters: tuple[CompletionFilterSpec, ...] = ()
+    show_headers: bool = False
+    column_separator: str = "  "
 
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Command node
 # ──────────────────────────────────────────────────────────────────────────────
 
+
 @dataclass(frozen=True)
 class CmdNode:
-    cmd:                    str
-    aliases:                tuple[str, ...]
-    description:            str
-    service:                str
-    method:                 str
-    server_streaming:       bool
-    client_streaming:       bool
-    input_fields:           tuple[FieldSpec, ...]
-    output_fields:          tuple[FieldSpec, ...]
-    display:                DisplaySpec
-    completions:            tuple[CompletionSource, ...]
-    bootstrap:              bool                = False
-    refresh_after_mutation: bool                = False
+    cmd: str
+    aliases: tuple[str, ...]
+    description: str
+    service: str
+    method: str
+    server_streaming: bool
+    client_streaming: bool
+    input_fields: tuple[FieldSpec, ...]
+    output_fields: tuple[FieldSpec, ...]
+    display: DisplaySpec
+    completions: tuple[CompletionSource, ...]
+    bootstrap: bool = False
+    refresh_after_mutation: bool = False
 
     def completion_for_field(self, field_name: str) -> Optional[CompletionSource]:
         for cs in self.completions:
@@ -165,12 +182,13 @@ class CmdNode:
 # UISpec — the compiled, immutable schema
 # ──────────────────────────────────────────────────────────────────────────────
 
+
 @dataclass(frozen=True)
 class UISpec:
-    services:  tuple[str, ...]
+    services: tuple[str, ...]
     # All commands keyed by canonical dot-path
-    commands:  dict[str, CmdNode]    # mutable dict in frozen dataclass is fine —
-    alias_map: dict[str, str]        # we never reassign these references
+    commands: dict[str, CmdNode]  # mutable dict in frozen dataclass is fine —
+    alias_map: dict[str, str]  # we never reassign these references
 
     def find_cmd(self, path_or_alias: str) -> Optional[CmdNode]:
         canonical = self.alias_map.get(path_or_alias, path_or_alias)
@@ -179,7 +197,8 @@ class UISpec:
     def subtree(self, prefix: str) -> list[CmdNode]:
         """All non-bootstrap commands whose cmd starts with prefix."""
         return [
-            n for k, n in self.commands.items()
+            n
+            for k, n in self.commands.items()
             if k.startswith(prefix) and not n.bootstrap
         ]
 
@@ -211,12 +230,14 @@ class UISpec:
 # Completion cache entry
 # ──────────────────────────────────────────────────────────────────────────────
 
+
 @dataclass
 class CandidateRow:
     """One projected completion candidate."""
+
     insert_value: str
     display_cols: tuple[tuple[str, str], ...]  # (text, style_class)
-    raw:          dict[str, Any]
+    raw: dict[str, Any]
 
 
 class CompletionCache:
